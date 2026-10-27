@@ -138,3 +138,45 @@ void tablero_imprimir(const Tablero *tablero)
     }
     printf("\n");
 }
+
+void tablero_colocar_fichas_iniciales(Tablero *tablero){
+    for(int posicion=0; posicion<tablero->cantidad_posiciones;posicion++){
+        tablero->ocupantes[posicion]=VACIA;
+
+    }
+
+tablero->ocupantes[25]=PUMA;
+
+for(int posicion=15;posicion<=24;posicion++){
+    tablero->ocupantes[posicion]=PERRO;
+}
+
+tablero->ocupantes[10]=PERRO;
+tablero->ocupantes[14]=PERRO;
+}
+
+int tablero_movimiento_valido(const Tablero *tablero, int origen, int destino){
+    if(origen<0 || origen >= tablero->cantidad_posiciones ||destino<0 || destino>=tablero->cantidad_posiciones){
+        return 0;
+    }
+
+    if(tablero->ocupantes[origen]==VACIA){
+        return 0;
+    }
+
+    if(tablero->ocupantes[destino] !=VACIA){
+        return 0;
+    }
+    return tablero_son_adyacentes(tablero,origen,destino);
+}
+
+int tablero_mover(Tablero *tablero,int origen, int destino){
+
+if(!tablero_movimiento_valido(tablero,origen,destino)){
+    return 0;
+}
+
+tablero->ocupantes[destino]=tablero->ocupantes[destino]=tablero->ocupantes[origen];
+tablero->ocupantes[origen]=VACIA;
+return 1;
+}

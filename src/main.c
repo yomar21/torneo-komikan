@@ -55,7 +55,41 @@ printf("Diagonal 6-12: %d\n",
 
 printf("Diagonal 1-5: %d\n",
        tablero_son_adyacentes(&tablero, 1, 5));
+   
 
+
+       
+tablero_colocar_fichas_iniciales(&tablero);
+
+int pumas = 0;
+int perros = 0;
+
+for (int posicion = 0;
+     posicion < tablero.cantidad_posiciones;
+     posicion++) {
+
+    if (tablero.ocupantes[posicion] == PUMA) {
+        pumas++;
+    } else if (tablero.ocupantes[posicion] == PERRO) {
+        perros++;
+    }
+}
+
+printf("Fichas iniciales: %d Puma y %d Perros\n",
+       pumas, perros);
+
+printf("Puma en posicion 25: %s\n",
+       tablero.ocupantes[25] == PUMA ? "si" : "no");
+
+       printf("Mover perro 10 -> 11: %d\n",
+       tablero_mover(&tablero, 10, 11));
+
+printf("Mover perro 15 -> 16: %d\n",
+       tablero_mover(&tablero, 15, 16));
+
+printf("Mover desde vacio 0 -> 1: %d\n",
+       tablero_mover(&tablero, 0, 1));
+       
 tablero_imprimir(&tablero);
 
     return EXIT_SUCCESS;

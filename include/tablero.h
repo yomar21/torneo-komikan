@@ -26,4 +26,9 @@ int tablero_son_adyacentes(
 
 void tablero_imprimir(const Tablero *tablero);
 
+
+void tablero_colocar_fichas_iniciales(Tablero *tablero);
+
+int tablero_movimiento_valido(const Tablero *tablero,int origen, int destino);
+int tablero_mover(Tablero *tablero,int origen, int destino);
 #endif
