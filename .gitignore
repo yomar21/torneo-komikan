@@ -1,2 +1,5 @@
 /torneo
-.DS_Storeß
+/build/
+*.o
+*.log
+.DS_Store
