@@ -47,6 +47,9 @@ static uint32_t siguiente_aleatorio(uint32_t *estado)
 
 static void terminar(Mesa *mesa, MotivoCierre motivo, ResultadoPartida resultado)
 {
+    if (mesa->terminada) {
+        return;
+    }
     mesa->terminada = 1;
     mesa->resumen.motivo = motivo;
     mesa->resumen.resultado = resultado;

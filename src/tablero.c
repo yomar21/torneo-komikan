@@ -266,8 +266,16 @@ void tablero_imprimir(const Tablero *tablero)
             int dx = (xb - xa) * 8;
             int dy = (yb - ya) * 4;
             int pasos = dy == 0 ? abs(dx) : abs(dy);
-            char simbolo = dy == 0 ? '-' : dx == 0 ? '|' :
-                           dx * dy > 0 ? '\\' : '/';
+            char simbolo;
+            if (dy == 0) {
+                simbolo = '-';
+            } else if (dx == 0) {
+                simbolo = '|';
+            } else if (dx * dy > 0) {
+                simbolo = '\\';
+            } else {
+                simbolo = '/';
+            }
             for (int paso = 1; paso < pasos; paso++) {
                 int x = cx + dx * paso / pasos;
                 int y = cy + dy * paso / pasos;
@@ -282,7 +290,7 @@ void tablero_imprimir(const Tablero *tablero)
     for (int posicion = 0; posicion < tablero->cantidad_posiciones; posicion++) {
         int x, y;
         if (obtener_coordenadas(posicion, &x, &y)) {
-            char nodo[6];
+            char nodo[16];
             snprintf(nodo, sizeof nodo, "%02d[%c]", posicion,
                      simbolo_ocupante(tablero->ocupantes[posicion]));
             memcpy(&dibujo[(y + 2) * 4][x * 8], nodo, 5);
