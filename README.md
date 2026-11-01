@@ -49,8 +49,8 @@ Todas las claves son opcionales y ninguna puede repetirse.
 | `retardo_min_ms` | entero de 1 a 60000 | 50 |
 | `retardo_max_ms` | entero de 1 a 60000, no menor que el minimo | 300 |
 | `semilla` | entero sin signo (el 0 es valido) | 0 |
-| `puma` | posicion de 0 a 28 | 25 |
-| `perros` | exactamente 12 posiciones de 0 a 28, separadas por coma | 10,14,15 a 24 |
+| `puma` | posicion de 0 a TOTAL_POSICIONES-1 | 25 |
+| `perros` | exactamente 12 posiciones validas del tablero, separadas por coma | 10,14,15 a 24 |
 
 Reglas de la disposicion: `puma` y `perros` se definen juntas o ninguna; no puede
 haber posiciones repetidas ni un perro sobre el Puma. El orden de la lista

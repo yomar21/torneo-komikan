@@ -248,6 +248,21 @@ static void probar_invalidos(void)
     COMPROBAR(configuracion_leer_archivo("/tmp/torneo_no_existe.txt", &c) == 0);
 }
 
+static void probar_borde_de_posiciones(void)
+{
+    char texto[128];
+    Configuracion c = configuracion_por_defecto();
+
+    /* La ultima posicion valida se acepta... */
+    snprintf(texto, sizeof texto,
+             "puma=%d\nperros=0,1,2,3,4,5,6,7,8,9,10,11\n", TOTAL_POSICIONES - 1);
+    COMPROBAR(leer_texto(texto, &c) == 1 && c.pos_puma == TOTAL_POSICIONES - 1);
+
+    /* ...y la siguiente se rechaza */
+    snprintf(texto, sizeof texto,
+             "puma=%d\nperros=0,1,2,3,4,5,6,7,8,9,10,11\n", TOTAL_POSICIONES);
+    debe_fallar(texto);
+}
 int main(void)
 {
     /* Las dos constantes del 12 no deben desincronizarse */
@@ -257,6 +272,7 @@ int main(void)
     probar_argumentos_con_archivo();
     probar_validos();
     probar_invalidos();
+    probar_borde_de_posiciones();
 
     printf("Configuracion: %d comprobaciones correctas "
            "(los errores anteriores eran esperados).\n", comprobaciones);

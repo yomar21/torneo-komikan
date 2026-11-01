@@ -5,10 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define POSICION_MAXIMA 28
+#include "tablero.h"
+#define POSICION_MAXIMA (TOTAL_POSICIONES - 1)
 #define RETARDO_MAXIMO_MS 60000
 #define MAX_CARACTERES_LINEA 255
+_Static_assert(CONFIG_TOTAL_PERROS == TOTAL_PERROS, "CONFIG_TOTAL_PERROS y TOTAL_PERROS deben ser iguales");
 
 Configuracion configuracion_por_defecto(void)
 {
@@ -62,8 +63,7 @@ static char *recortar(char *texto)
 
 /* Convertimos el texto a numero y comprobamos que esté
  * dentro del rango permitido. Si es valido, guardamos el resultado. */
-static int leer_entero_en_rango(const char *texto, long minimo, long maximo,
-                                long *resultado)
+static int leer_entero_en_rango(const char *texto, long minimo, long maximo, long *resultado)
 {
     if (texto == NULL || *texto == '\0') {
         return 0;/* El texto está vacío. */
@@ -260,8 +260,9 @@ int configuracion_leer_archivo(const char *ruta, Configuracion *config)
             }
             vista_puma = 1;
             if (!leer_entero_en_rango(valor, 0, POSICION_MAXIMA, &numero)) {
-                error_en_linea(ruta, numero_linea,
-                               "puma debe ser una posicion entre 0 y 28");
+                char motivo[128];
+                snprintf(motivo, sizeof motivo, "puma debe ser una posicion entre 0 y %d", POSICION_MAXIMA);
+                error_en_linea(ruta, numero_linea,motivo);
                 ok = 0;
                 break;
             }
@@ -274,11 +275,10 @@ int configuracion_leer_archivo(const char *ruta, Configuracion *config)
                 break;
             }
             vista_perros = 1;
-            if (!leer_lista_posiciones(valor, copia.pos_perros,
-                                       CONFIG_TOTAL_PERROS)) {
-                error_en_linea(ruta, numero_linea,
-                               "perros debe ser una lista de exactamente 12 "
-                               "posiciones entre 0 y 28 separadas por coma");
+            if (!leer_lista_posiciones(valor, copia.pos_perros,CONFIG_TOTAL_PERROS)) {
+                char motivo[128];
+                snprintf(motivo, sizeof motivo, "perros debe ser una lista de exactamente %d ""posiciones entre 0 y %d separadas por coma", CONFIG_TOTAL_PERROS, POSICION_MAXIMA);
+                error_en_linea(ruta, numero_linea,motivo);;
                 ok = 0;
                 break;
             }
