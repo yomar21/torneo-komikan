@@ -54,30 +54,6 @@ void tablero_inicializar(Tablero *tablero)
     conectar(tablero, 28, 3);
 }
 
-void tablero_colocar_fichas_iniciales(Tablero *tablero)
-{
-    tablero->perros_capturados = 0;
-    for (int posicion = 0; posicion < tablero->cantidad_posiciones; posicion++) {
-        tablero->ocupantes[posicion] = VACIA;
-        tablero->identificadores[posicion] = 0;
-    }
-    tablero->ocupantes[25] = PUMA;
-    for (int posicion = 15; posicion <= 24; posicion++) {
-        tablero->ocupantes[posicion] = PERRO;
-    }
-    tablero->ocupantes[10] = PERRO;
-    tablero->ocupantes[14] = PERRO;
-
-    int siguiente_perro = 2;
-    for (int posicion = 0; posicion < tablero->cantidad_posiciones; posicion++) {
-        if (tablero->ocupantes[posicion] == PUMA) {
-            tablero->identificadores[posicion] = ID_PUMA;
-        } else if (tablero->ocupantes[posicion] == PERRO) {
-            tablero->identificadores[posicion] = siguiente_perro++;
-        }
-    }
-}
-
 int tablero_buscar_ficha(const Tablero *tablero, int identificador)
 {
     if (identificador < ID_PUMA || identificador > TOTAL_FICHAS) {
@@ -89,6 +65,47 @@ int tablero_buscar_ficha(const Tablero *tablero, int identificador)
         }
     }
     return -1;
+}
+
+    int tablero_colocar_fichas(Tablero *tablero, int pos_puma, const int pos_perros[TOTAL_PERROS]) {
+    if (tablero==NULL || pos_perros==NULL || tablero->cantidad_posiciones != TOTAL_POSICIONES) {
+        return 0;
+    }
+    if (!posicion_valida(tablero, pos_puma)) {
+        return 0;
+    }
+    for (int i = 0; i < TOTAL_PERROS; i++) {
+        if (!posicion_valida(tablero, pos_perros[i])) {
+            return 0;
+        }
+        if (pos_perros[i] == pos_puma) {
+            return 0;
+        }
+        for (int j = i + 1; j < TOTAL_PERROS; j++) {
+            if (pos_perros[i] == pos_perros[j]) {
+                return 0;
+            }
+        }
+    }
+    tablero->perros_capturados = 0;
+    for (int posicion = 0; posicion < tablero->cantidad_posiciones; posicion++) {
+        tablero->ocupantes[posicion] = VACIA;
+        tablero->identificadores[posicion] = 0;
+    }
+    tablero->ocupantes[pos_puma] = PUMA;
+    tablero->identificadores[pos_puma] = ID_PUMA;
+
+    for (int posicion = 0; posicion < TOTAL_PERROS; posicion++) {
+        tablero->ocupantes[pos_perros[posicion]] = PERRO;
+        tablero->identificadores[pos_perros[posicion]] = ID_PUMA+1+posicion;
+    }
+    return 1;
+}
+void tablero_colocar_fichas_iniciales(Tablero *tablero)
+{
+    static const int perros[TOTAL_PERROS] = {10, 14, 15, 16, 17, 18,
+                                             19, 20, 21, 22, 23, 24};
+    tablero_colocar_fichas(tablero, 25, perros);
 }
 
 int tablero_estado_consistente(const Tablero *tablero)

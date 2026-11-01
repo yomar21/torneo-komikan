@@ -31,6 +31,7 @@ void tablero_inicializar(Tablero *tablero);
 void tablero_colocar_fichas_iniciales(Tablero *tablero);
 void tablero_imprimir(const Tablero *tablero);
 int tablero_buscar_ficha(const Tablero *tablero, int identificador);
+int tablero_colocar_fichas(Tablero *tablero, int pos_puma,const int pos_perros[TOTAL_PERROS]);
 int tablero_estado_consistente(const Tablero *tablero);
 int tablero_son_adyacentes(const Tablero *tablero, int origen, int destino);
 int tablero_movimiento_valido(const Tablero *tablero, int origen, int destino);

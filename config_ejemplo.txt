@@ -1,0 +1,5 @@
+retardo_min_ms=50
+retardo_max_ms=300
+semilla=42
+puma=25
+perros=10,14,15,16,17,18,19,20,21,22,23,24

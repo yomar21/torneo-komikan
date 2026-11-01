@@ -20,6 +20,7 @@ Desde la terminal de VS Code, dentro de esta carpeta:
 ```sh
 make
 ./torneo 2 1
+./torneo 2 1 config_ejemplo.txt
 ```
 
 Se muestra el tablero completo, incluido el trono, los eventos y el resultado.
@@ -33,6 +34,31 @@ es una proteccion provisional para las pruebas, no una regla del Komikan.
 Con movimientos aleatorios no se puede prometer que toda partida tenga una
 victoria en una cantidad determinada de acciones.
 
+## Archivo de configuracion
+
+El uso completo es `./torneo N M [config.txt]`. El tercer argumento es opcional;
+sin el, el programa se comporta con los valores por defecto. En
+`config_ejemplo.txt` hay un ejemplo comentado.
+
+Formato: una clave por linea, `clave=valor`. Las lineas vacias y las que
+empiezan con `#` se ignoran; los comentarios no se admiten al final de un valor.
+Todas las claves son opcionales y ninguna puede repetirse.
+
+| Clave | Valor | Por defecto |
+| --- | --- | --- |
+| `retardo_min_ms` | entero de 1 a 60000 | 50 |
+| `retardo_max_ms` | entero de 1 a 60000, no menor que el minimo | 300 |
+| `semilla` | entero sin signo (el 0 es valido) | 0 |
+| `puma` | posicion de 0 a 28 | 25 |
+| `perros` | exactamente 12 posiciones de 0 a 28, separadas por coma | 10,14,15 a 24 |
+
+Reglas de la disposicion: `puma` y `perros` se definen juntas o ninguna; no puede
+haber posiciones repetidas ni un perro sobre el Puma. El orden de la lista
+`perros` asigna los identificadores 2 a 13.
+
+Ante cualquier error el programa informa la ruta y el numero de linea, termina
+con codigo 1 y no aplica ningun valor del archivo (todo o nada).
+
 ## Probar las reglas y la concurrencia
 
 ```sh
@@ -40,7 +66,7 @@ make test
 ```
 
 Se ejecutan pruebas de argumentos, movimientos, identidades, capturas,
-victorias e integridad del tablero, y veinte simulaciones concurrentes rapidas.
+victorias e integridad del tablero, veinte simulaciones concurrentes rapidas y del archivo de configuración.
 Los mensajes de entradas invalidas durante la prueba de configuracion son esperados.
 Los binarios de prueba se guardan en `build/`, que Git ignora.
 
@@ -68,7 +94,7 @@ compilacion con GCC en Linux antes de entregar.
 | Archivo | Responsabilidad |
 | --- | --- |
 | `src/main.c` | Inicia la demostracion y presenta el resumen. |
-| `src/configuracion.c` | Valores iniciales y validacion de N y M. |
+| `src/configuracion.c` | Valores iniciales y validacion de N y M y lectura de config.txt |
 | `src/tablero.c` | Posiciones, fichas, conexiones y reglas. No administra threads. |
 | `src/mesa.c` | Threads de fichas, juez, cola de propuestas y sincronizacion. |
 | `include/` | Tipos y funciones publicas de cada modulo. |
@@ -81,7 +107,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Cuadricula 5x5 con conexiones horizontales, verticales y diagonales alternadas.
 - Trono con cuatro posiciones adicionales: 25, 26, 27 y 28; total de 29.
 - El cruce central del trono se considera posicion jugable.
-- Puma inicial en 25; Perros en 10, 14 y de 15 a 24.
+- Puma inicial en 25; Perros en 10, 14 y de 15 a 24 (disposición por defecto; se puede cambiar desde el archivo).
 - Un salto captura un solo Perro; la posicion de aterrizaje debe estar vacia.
 - Las tres posiciones del salto deben estar alineadas y a igual distancia.
 - Cada salto es una accion independiente con un nuevo retardo.
@@ -94,7 +120,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Simular N llegadas de jugadores mediante threads y formar parejas.
 - Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion.
 - Resolver y documentar el jugador sobrante si N es impar.
-- Leer retardos, semilla y posiciones desde un archivo de configuracion.
+- Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
 - Detectar abandonos o fallos internos de jugadores y adjudicar el resultado.
 - Atender SIGINT y coordinar el cierre de todo el servidor.
 - Evaluar concurrencia, escalabilidad y recursos en Linux.
