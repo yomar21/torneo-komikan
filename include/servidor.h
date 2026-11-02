@@ -19,10 +19,12 @@ typedef struct {
     int victorias_puma;
     int victorias_perros;
     int errores;             /* partidas que terminaron con error */
+    int max_simultaneas;     /* mayor numero de mesas activas a la vez */
 } ResumenServidor;
 
-/* Hace llegar a los jugadores, los empareja de a 2 y juega cada partida
- * (por ahora una tras otra). Con inicial = NULL usa la disposicion por defecto.
+/* Hace llegar a los jugadores, los empareja de a 2 y juega cada pareja en una
+ * mesa. Nunca hay mas de config->max_mesas mesas activas; si estan todas
+ * ocupadas, el resto espera. Con inicial = NULL usa la disposicion por defecto.
  * Devuelve 1 si todo salio bien y 0 si hubo algun error. */
 int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
                       const OpcionesServidor *opciones, ResumenServidor *resumen);

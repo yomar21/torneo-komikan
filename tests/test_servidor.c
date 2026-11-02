@@ -38,6 +38,7 @@ int main(void)
     Configuracion config = configuracion_por_defecto();
     config.retardo_min_ms = 1;
     config.retardo_max_ms = 3;
+    config.max_mesas = 1;
     OpcionesServidor opciones = {.mostrar_eventos = 0, .mostrar_tablero = 0};
 
     /* Calentamiento: TSAN crea un thread propio con el primer pthread_create. */
@@ -60,6 +61,7 @@ int main(void)
         COMPROBAR(r.sin_pareja == n % 2);   /* con N impar uno queda sin pareja */
         COMPROBAR(r.victorias_puma + r.victorias_perros == r.partidas);
         COMPROBAR(r.errores == 0);
+        COMPROBAR(r.max_simultaneas <= 1);   /* con M = 1 las partidas no se solapan */
     }
 
     /* Deben quedar los mismos threads de antes (el sistema tarda en retirarlos). */
@@ -70,6 +72,32 @@ int main(void)
         threads = contar_threads();
     }
     COMPROBAR(threads == -1 || threads == threads_antes);
+
+    /* Varias mesas a la vez: nunca mas de M y todas las partidas terminan. */
+    int mesas[] = {1, 2, 3, 8};
+    for (int m = 0; m < 4; m++) {
+        config.total_jugadores = 8;
+        config.max_mesas = mesas[m];
+        config.semilla = 100u + (unsigned int)m;
+        ResumenServidor r8;
+        COMPROBAR(servidor_ejecutar(&config, NULL, &opciones, &r8));
+        COMPROBAR(r8.partidas == 4 && r8.atendidos == 8 && r8.errores == 0);
+        COMPROBAR(r8.victorias_puma + r8.victorias_perros == 4);
+        COMPROBAR(r8.max_simultaneas >= 1 && r8.max_simultaneas <= mesas[m]);
+        COMPROBAR(r8.jugadores_unidos == 8);
+        if (mesas[m] == 1) {
+            COMPROBAR(r8.max_simultaneas == 1);
+        } else {
+            COMPROBAR(r8.max_simultaneas >= 2);   /* se juega en paralelo */
+        }
+    }
+    /* Mas mesas que parejas: solo se usan las necesarias. */
+    config.total_jugadores = 4;
+    config.max_mesas = 100;
+    ResumenServidor rm;
+    COMPROBAR(servidor_ejecutar(&config, NULL, &opciones, &rm));
+    COMPROBAR(rm.partidas == 2 && rm.max_simultaneas <= 2);
+    config.max_mesas = 1;
 
     /* Con una disposicion inicial dada. */
     Tablero inicial;
@@ -93,6 +121,9 @@ int main(void)
     config.total_jugadores = 0;
     COMPROBAR(!servidor_ejecutar(&config, NULL, &opciones, &r));
     config.total_jugadores = 2;
+    config.max_mesas = 0;
+    COMPROBAR(!servidor_ejecutar(&config, NULL, &opciones, &r));
+    config.max_mesas = 1;
     config.retardo_min_ms = 0;
     COMPROBAR(!servidor_ejecutar(&config, NULL, &opciones, &r));
 

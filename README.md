@@ -11,10 +11,10 @@ No hay turnos alternados entre bandos.
 
 Este avance todavia no es el torneo completo. Ya funciona `./torneo N M` con
 cualquier N: los N jugadores llegan de forma concurrente (un thread por jugador),
-se emparejan de a 2 y cada pareja juega su partida. Por ahora las partidas se
-juegan una tras otra; el limite de M mesas simultaneas se agregara en el
-siguiente bloque. Si N es impar, el ultimo jugador queda sin pareja y el
-programa termina sin colgarse.
+se emparejan de a 2 y cada pareja juega su partida en una mesa. Nunca hay mas de
+M mesas activas a la vez: si estan todas ocupadas, los jugadores restantes
+esperan sin gastar CPU hasta que se libera una. Si N es impar, el ultimo
+jugador queda sin pareja y el programa termina sin colgarse.
 
 ## Compilar y ejecutar
 
@@ -98,7 +98,7 @@ compilacion con GCC en Linux antes de entregar.
 | Archivo | Responsabilidad |
 | --- | --- |
 | `src/main.c` | Lee argumentos, llama al servidor y presenta el resumen. |
-| `src/servidor.c` | Threads de jugador, matchmaker (parejas de a 2) y partidas en secuencia. |
+| `src/servidor.c` | Threads de jugador, matchmaker (parejas de a 2) y hasta M mesas simultaneas, cada una en su thread. |
 | `src/cola.c` | Cola FIFO circular de enteros; no es thread-safe, la protege el servidor. |
 | `src/configuracion.c` | Valores iniciales y validacion de N y M y lectura de config.txt |
 | `src/tablero.c` | Posiciones, fichas, conexiones y reglas. No administra threads. |
@@ -124,7 +124,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 ## Pendiente para la entrega
 
 - Simular N llegadas de jugadores mediante threads y formar parejas (Listo).
-- Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion.
+- Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion (Listo).
 - Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
 - Detectar abandonos o fallos internos de jugadores y adjudicar el resultado.

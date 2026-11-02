@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
         disposicion = &inicial;
     }
     printf("Komikan - torneo concurrente\n");
-    printf("Jugadores: %d. Mesas maximas: %d (por ahora las partidas se juegan una tras otra).\n",
+    printf("Jugadores: %d. Mesas maximas simultaneas: %d.\n",
            config.total_jugadores, config.max_mesas);
     printf("13 threads de fichas y 1 juez por partida; sin turnos.\n");
     printf("Retardos: %d a %d ms. Semilla: %u\n", config.retardo_min_ms,
@@ -36,6 +36,7 @@ int main(int argc, char *argv[])
            resumen.partidas, resumen.victorias_puma, resumen.victorias_perros);
     printf("Jugadores: %d llegaron, %d jugaron y %d quedaron sin pareja.\n",
            resumen.llegados, resumen.atendidos, resumen.sin_pareja);
+    printf("Maximo de mesas activas a la vez: %d.\n", resumen.max_simultaneas);
     printf("Threads de jugador recogidos: %d/%d.\n",
            resumen.jugadores_unidos, resumen.jugadores_creados);
     return correcto ? EXIT_SUCCESS : EXIT_FAILURE;
