@@ -14,6 +14,7 @@ typedef struct {
     unsigned int limite_propuestas;
     int mostrar_eventos;
     int mostrar_tablero;
+    int id_mesa;               /* numero que se muestra en los mensajes */
 } OpcionesMesa;
 
 typedef struct {

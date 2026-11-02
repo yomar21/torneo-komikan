@@ -9,9 +9,12 @@ un thread juez, retardos aleatorios y un tablero compartido protegido con un
 mutex POSIX. Las fichas proponen acciones y el juez las valida en orden de llegada.
 No hay turnos alternados entre bandos.
 
-Este avance todavia no es el torneo completo. Por ahora solo admite `N=2` y `M=1`.
-Los dos jugadores se representan como los bandos de esa pareja; los threads
-que simulan su llegada y el emparejamiento se agregaran en el siguiente bloque.
+Este avance todavia no es el torneo completo. Ya funciona `./torneo N M` con
+cualquier N: los N jugadores llegan de forma concurrente (un thread por jugador),
+se emparejan de a 2 y cada pareja juega su partida. Por ahora las partidas se
+juegan una tras otra; el limite de M mesas simultaneas se agregara en el
+siguiente bloque. Si N es impar, el ultimo jugador queda sin pareja y el
+programa termina sin colgarse.
 
 ## Compilar y ejecutar
 
@@ -19,13 +22,14 @@ Desde la terminal de VS Code, dentro de esta carpeta:
 
 ```sh
 make
-./torneo 2 1
-./torneo 2 1 config_ejemplo.txt
+./torneo 6 1
+./torneo 5 1 config_ejemplo.txt
 ```
 
 Se muestra el tablero completo, incluido el trono, los eventos y el resultado.
 Las conexiones verticales mantienen tres lineas entre posiciones.
-Al terminar debe informar que recogio los **13 threads de fichas y el juez**.
+Cada partida recoge sus **13 threads de fichas y el juez**, y al final se informa
+que se recogieron todos los threads de jugador.
 Una ficha capturada deja de actuar y su thread termina.
 
 La demostracion tiene un limite de **500 propuestas**, definido en `src/main.c`.
@@ -93,7 +97,9 @@ compilacion con GCC en Linux antes de entregar.
 
 | Archivo | Responsabilidad |
 | --- | --- |
-| `src/main.c` | Inicia la demostracion y presenta el resumen. |
+| `src/main.c` | Lee argumentos, llama al servidor y presenta el resumen. |
+| `src/servidor.c` | Threads de jugador, matchmaker (parejas de a 2) y partidas en secuencia. |
+| `src/cola.c` | Cola FIFO circular de enteros; no es thread-safe, la protege el servidor. |
 | `src/configuracion.c` | Valores iniciales y validacion de N y M y lectura de config.txt |
 | `src/tablero.c` | Posiciones, fichas, conexiones y reglas. No administra threads. |
 | `src/mesa.c` | Threads de fichas, juez, cola de propuestas y sincronizacion. |
@@ -117,9 +123,9 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 
 ## Pendiente para la entrega
 
-- Simular N llegadas de jugadores mediante threads y formar parejas.
+- Simular N llegadas de jugadores mediante threads y formar parejas (Listo).
 - Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion.
-- Resolver y documentar el jugador sobrante si N es impar.
+- Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
 - Detectar abandonos o fallos internos de jugadores y adjudicar el resultado.
 - Atender SIGINT y coordinar el cierre de todo el servidor.

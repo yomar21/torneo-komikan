@@ -218,7 +218,8 @@ static void *ejecutar_juez(void *argumento)
         if (resultado != PARTIDA_EN_CURSO) {
             terminar(mesa, resultado == ESTADO_INVALIDO ? MESA_ERROR : MESA_POR_VICTORIA,
                      resultado);
-        } else if (mesa->opciones.limite_propuestas != 0 && mesa->resumen.propuestas >= mesa->opciones.limite_propuestas) {
+        } else if (mesa->opciones.limite_propuestas != 0 &&
+                   mesa->resumen.propuestas >= mesa->opciones.limite_propuestas) {
             terminar(mesa, MESA_LIMITE_PRUEBA, PARTIDA_EN_CURSO);
         }
         Tablero copia = mesa->tablero;
@@ -228,8 +229,8 @@ static void *ejecutar_juez(void *argumento)
 
         /* Imprimimos una copia para no retener el tablero durante la salida. */
         if (mesa->opciones.mostrar_eventos) {
-            printf("[Mesa 1, propuesta %u] Ficha %d: %d -> %d%s: %s\n",
-                   numero, propuesta.id, propuesta.origen, propuesta.destino,
+            printf("[Mesa %d, propuesta %u] Ficha %d: %d -> %d%s: %s\n",
+                   mesa->opciones.id_mesa, numero, propuesta.id, propuesta.origen, propuesta.destino,
                    propuesta.intermedia >= 0 ? " (captura)" : "",
                    aceptada ? "aceptada" : "rechazada; el tablero cambio");
         }
@@ -247,7 +248,7 @@ int mesa_ejecutar(const Configuracion *config, const Tablero *inicial,
 {
     *resumen = (ResumenMesa){.resultado = ESTADO_INVALIDO, .motivo = MESA_ERROR};
     if (config->retardo_min_ms < 1 || config->retardo_max_ms < config->retardo_min_ms ||
-        config->retardo_max_ms > 60000 ) {
+        config->retardo_max_ms > 60000) {
         fprintf(stderr, "Configuracion de mesa invalida.\n");
         return 0;
     }
@@ -276,6 +277,7 @@ int mesa_ejecutar(const Configuracion *config, const Tablero *inicial,
         return 0;
     }
     if (opciones->mostrar_tablero) {
+        printf("[Mesa %d] Tablero inicial:\n", opciones->id_mesa);
         tablero_imprimir(&mesa.tablero);
     }
     pthread_t juez;
