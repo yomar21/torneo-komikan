@@ -62,6 +62,15 @@ int main(void)
     COMPROBAR(resumen.resultado == PARTIDA_EN_CURSO);
     COMPROBAR(resumen.propuestas == 1);
     COMPROBAR(resumen.fichas_unidas == TOTAL_FICHAS && resumen.juez_unido);
+
+    /* Limite 0 = sin limite: la partida solo termina porque alguien gana. */
+    opciones.limite_propuestas = 0;
+    config.semilla = 7;
+    COMPROBAR(mesa_ejecutar(&config, NULL, &opciones, &resumen));
+    COMPROBAR(resumen.motivo == MESA_POR_VICTORIA);
+    COMPROBAR(resumen.resultado != PARTIDA_EN_CURSO);
+    COMPROBAR(resumen.fichas_unidas == TOTAL_FICHAS && resumen.juez_unido);
+
     printf("Mesa: %d comprobaciones correctas, 20 simulaciones, "
            "%u capturas y %u propuestas obsoletas rechazadas.\n",
            comprobaciones, capturas, rechazadas);

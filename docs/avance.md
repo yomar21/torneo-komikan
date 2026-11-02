@@ -75,3 +75,16 @@ al permitir varias mesas se agregara un identificador y se coordinara el log.
 Despues se completaran configuracion de entrada, abandono y cierre con SIGINT.
 
 Este documento son notas de trabajo, no el informe final exigido por la guia.
+
+## Experimento: las partidas terminan sin limite artificial
+
+Antes de quitar el limite de 500 propuestas se ejecutaron 200 partidas
+(semillas 0 a 199, retardos de 1 a 3 ms, disposicion por defecto) con un limite
+de seguridad de 100000 propuestas. Resultado: 200 victorias, 0 partidas sin
+ganador y un maximo de 344 propuestas en una sola partida.
+
+Con esos datos el riesgo de livelock (todos actuan pero la partida no avanza)
+es bajo para esta topologia: ninguna partida se acerco al limite. No es una
+prueba de que nunca ocurra; la topologia puede cambiar (commits 8 y 9) y habra
+que repetir el experimento. Desde este commit `limite_propuestas = 0` significa
+"sin limite" y `main` lo usa, asi que la partida solo termina por victoria.

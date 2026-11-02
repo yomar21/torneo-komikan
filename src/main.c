@@ -34,11 +34,10 @@ int main(int argc, char *argv[])
     printf("Disposicion inicial: %s.\n",disposicion != NULL ? "personalizada" : "por defecto");
 
     OpcionesMesa opciones = {
-        .limite_propuestas = 500,
+        .limite_propuestas = 0, //termina solo por victoria.
         .mostrar_eventos = 1,
         .mostrar_tablero = 1
     };
-    printf("Limite de demostracion: %u propuestas; no asigna ganador al alcanzarse.\n",opciones.limite_propuestas);
     ResumenMesa resumen;
     if (!mesa_ejecutar(&config, disposicion, &opciones, &resumen)) {
         return EXIT_FAILURE;
