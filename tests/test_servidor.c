@@ -3,6 +3,7 @@
 #include "log.h"
 
 #include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,46 @@ static int contar_threads(void)
     }
     closedir(directorio);
     return cantidad;
+}
+
+typedef struct {
+    Servidor *servidor;
+    int espera_ms;
+    int veces;
+} DatosParada;
+
+/* Thread auxiliar: espera un poco y detiene el servidor una o varias veces. */
+static void *detener_despues(void *argumento)
+{
+    DatosParada *datos = argumento;
+    struct timespec pausa = {.tv_sec = datos->espera_ms / 1000,
+                             .tv_nsec = (long)(datos->espera_ms % 1000) * 1000000L};
+    nanosleep(&pausa, NULL);
+    for (int i = 0; i < datos->veces; i++) {
+        servidor_detener(datos->servidor);
+    }
+    return NULL;
+}
+
+/* Corre un torneo y lo detiene a los espera_ms. Devuelve 0 si algo fallo. */
+static int torneo_detenido(const Configuracion *config, int espera_ms, int veces,
+                           ResumenServidor *resumen)
+{
+    OpcionesServidor silencio = {0};
+    Servidor *servidor = servidor_crear(config, NULL, &silencio);
+    if (servidor == NULL) {
+        return 0;
+    }
+    DatosParada datos = {.servidor = servidor, .espera_ms = espera_ms, .veces = veces};
+    pthread_t auxiliar;
+    if (pthread_create(&auxiliar, NULL, detener_despues, &datos) != 0) {
+        servidor_destruir(servidor);
+        return 0;
+    }
+    int correcto = servidor_correr(servidor, resumen);
+    pthread_join(auxiliar, NULL);
+    servidor_destruir(servidor);
+    return correcto;
 }
 
 int main(void)
@@ -153,6 +194,73 @@ int main(void)
     COMPROBAR(servidor_ejecutar(&config, &inicial, &opciones, &r));
     COMPROBAR(r.partidas == 2 && r.sin_pareja == 0);
     COMPROBAR(servidor_resumen_coherente(&r, 4));
+
+    /* Detener el servidor: deja de entrar gente y el programa termina solo. */
+    config.total_jugadores = 200;
+    config.max_mesas = 3;
+    ResumenServidor rp;
+    time_t antes = time(NULL);
+    COMPROBAR(torneo_detenido(&config, 300, 1, &rp));
+    COMPROBAR(time(NULL) - antes < 30);   /* no se quedo colgado */
+    COMPROBAR(servidor_resumen_coherente(&rp, 200));
+    COMPROBAR(rp.cancelados > 0 && rp.cancelados < 200);
+    COMPROBAR(rp.partidas >= 1 && rp.atendidos == 2 * rp.partidas);
+    COMPROBAR(rp.errores == 0 && rp.max_simultaneas <= 3);
+    COMPROBAR(rp.jugadores_creados == 200 && rp.jugadores_unidos == 200);
+
+    /* Detener antes de empezar: nadie juega y todos quedan cancelados. */
+    config.total_jugadores = 10;
+    config.max_mesas = 2;
+    OpcionesServidor silencio = {0};
+    Servidor *servidor = servidor_crear(&config, NULL, &silencio);
+    COMPROBAR(servidor != NULL);
+    servidor_detener(servidor);
+    COMPROBAR(servidor_correr(servidor, &rp));
+    COMPROBAR(rp.partidas == 0 && rp.atendidos == 0 && rp.cancelados == 10);
+    COMPROBAR(rp.llegados == 0 && rp.jugadores_unidos == 10);
+    COMPROBAR(servidor_resumen_coherente(&rp, 10));
+    ResumenServidor otra;
+    COMPROBAR(!servidor_correr(servidor, &otra));   /* un servidor solo corre una vez */
+    servidor_destruir(servidor);
+
+    /* Detener cuando ya termino todo no cambia nada, y se puede repetir. */
+    servidor = servidor_crear(&config, NULL, &silencio);
+    COMPROBAR(servidor != NULL);
+    COMPROBAR(servidor_correr(servidor, &rp));
+    COMPROBAR(rp.cancelados == 0 && rp.partidas == 5);
+    servidor_detener(servidor);
+    servidor_detener(servidor);
+    servidor_destruir(servidor);
+    servidor_destruir(NULL);
+
+    /* Muchas paradas juntas desde otro thread: la cancelacion cuenta una sola vez. */
+    config.total_jugadores = 100;
+    COMPROBAR(torneo_detenido(&config, 5, 1000, &rp));
+    COMPROBAR(servidor_resumen_coherente(&rp, 100));
+
+    /* Parada a distintos tiempos, con llegadas repartidas en el tiempo: algunos
+     * jugadores se cancelan antes de llegar. */
+    Configuracion repartida = config;
+    repartida.total_jugadores = 60;
+    repartida.retardo_max_ms = 40;
+    ResumenServidor rr;
+    COMPROBAR(torneo_detenido(&repartida, 20, 1, &rr));
+    COMPROBAR(servidor_resumen_coherente(&rr, 60));
+    COMPROBAR(rr.llegados < 60 && rr.cancelados > 0);   /* no llegaron todos */
+    COMPROBAR(rr.atendidos == 2 * rr.partidas && rr.errores == 0);
+
+    /* Repetir la parada muchas veces, a tiempos distintos, para buscar carreras. */
+    config.total_jugadores = 40;
+    config.max_mesas = 2;
+    for (int i = 0; i < 30; i++) {
+        ResumenServidor rs;
+        COMPROBAR(torneo_detenido(&config, i * 2, 1, &rs));
+        COMPROBAR(servidor_resumen_coherente(&rs, 40));
+        COMPROBAR(rs.jugadores_creados == 40 && rs.jugadores_unidos == 40);
+        COMPROBAR(rs.atendidos == 2 * rs.partidas && rs.errores == 0);
+        COMPROBAR(rs.max_simultaneas <= 2);
+    }
+    config.max_mesas = 1;
 
     /* Quien es el Puma depende solo de la semilla y la partida. */
     int puma_primero = 0;

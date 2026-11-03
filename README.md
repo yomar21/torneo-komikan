@@ -31,6 +31,12 @@ y quedaron sin pareja, las partidas (victorias de cada bando, por abandono,
 canceladas y con error) y el maximo de mesas activas a la vez. Las cuentas se
 comprueban entre si: cada jugador y cada partida se cuenta una sola vez.
 
+Con **Ctrl+C** el servidor deja de aceptar jugadores de inmediato: los que aun no
+llegaron y los que esperan pareja en la cola quedan cancelados, y no se forman
+mas parejas. Las partidas que ya estan en juego terminan por su cuenta y despues
+el programa sale solo, mostrando el resumen. Las senales las atiende un thread
+dedicado (con `sigwait`), porque un manejador clasico no puede usar mutex ni el log.
+
 El programa termina con codigo 0 si el torneo acabo normalmente y con 1 si hubo
 un error (argumentos o configuracion invalidos, o un fallo al crear threads).
 
@@ -105,7 +111,7 @@ compilacion con GCC en Linux antes de entregar.
 
 | Archivo | Responsabilidad |
 | --- | --- |
-| `src/main.c` | Lee argumentos, llama al servidor y presenta el resumen. |
+| `src/main.c` | Lee argumentos, atiende Ctrl+C en un thread de senales, llama al servidor y presenta el resumen. |
 | `src/servidor.c` | Threads de jugador, matchmaker (parejas de a 2) y hasta M mesas simultaneas, cada una en su thread. |
 | `src/log.c` | Salida unica con mutex: prefijo `[Mesa k]` o `[Servidor]` y tableros que no se mezclan entre mesas. |
 | `src/cola.c` | Cola FIFO circular de enteros; no es thread-safe, la protege el servidor. |
@@ -137,7 +143,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
 - Detectar abandonos o fallos internos de jugadores y adjudicar el resultado.
-- Atender SIGINT y coordinar el cierre de todo el servidor.
+- Atender SIGINT: dejar de aceptar jugadores (Listo). Falta cancelar las partidas en curso y cerrar sin fugas.
 - Evaluar concurrencia, escalabilidad y recursos en Linux.
 - Redactar el informe PDF de hasta dos paginas.
 

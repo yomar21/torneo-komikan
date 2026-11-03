@@ -15,7 +15,8 @@ typedef enum {
     JUGADOR_EN_ESPERA,
     JUGADOR_JUGANDO,
     JUGADOR_FINALIZADO,
-    JUGADOR_SIN_PAREJA
+    JUGADOR_SIN_PAREJA,
+    JUGADOR_CANCELADO        /* el servidor se detuvo antes de que jugara */
 } EstadoJugador;
 
 typedef struct {
@@ -23,8 +24,6 @@ typedef struct {
     EstadoJugador estado;    /* se usa solo con el mutex tomado */
     pthread_cond_t cond;     /* aqui espera el jugador */
 } Jugador;
-
-typedef struct Servidor Servidor;
 
 /* Una mesa fisica. Hay a lo mas M y se reutilizan. */
 typedef struct {
@@ -41,10 +40,11 @@ typedef struct {
 struct Servidor {
     Configuracion config;
     OpcionesServidor opciones;
-    const Tablero *inicial;
-    ResumenServidor *resumen;        /* se actualiza con el mutex tomado */
+    Tablero inicial;
+    int usar_inicial;
+    ResumenServidor resumen;         /* se actualiza con el mutex tomado */
     pthread_mutex_t mutex;           /* protege la cola, los estados, las mesas y el resumen */
-    pthread_cond_t cond_matchmaker;  /* avisa que llego un jugador o se libero una mesa */
+    pthread_cond_t cond_matchmaker;  /* avisa que llego un jugador, se libero una mesa o se detuvo */
     Cola *cola;                      /* jugadores en orden de llegada */
     Jugador *jugadores;
     SlotMesa *slots;
@@ -52,6 +52,8 @@ struct Servidor {
     int mesas_activas;
     int esperados;                   /* cuantos jugadores van a llegar */
     int llegados;
+    int detenido;                    /* ya no se aceptan mas jugadores */
+    int corrido;                     /* servidor_correr ya se llamo */
 };
 
 typedef struct {
@@ -86,23 +88,28 @@ static void *ejecutar_jugador(void *argumento)
     }
 
     pthread_mutex_lock(&servidor->mutex);
-    /* Espera su hora de llegada. Si despierta antes, vuelve a esperar. */
-    int error;
-    do {
-        error = pthread_cond_timedwait(&jugador->cond, &servidor->mutex, &hasta);
-    } while (error == 0);
-
-    servidor->llegados++;
-    if (cola_encolar(servidor->cola, jugador->id)) {
-        if (servidor->opciones.mostrar_eventos) {
-            log_evento(0, "Llega el jugador %d", jugador->id);
+    /* Espera su hora de llegada. Solo servidor_detener lo despierta antes. */
+    while (jugador->estado == JUGADOR_EN_ESPERA) {
+        if (pthread_cond_timedwait(&jugador->cond, &servidor->mutex, &hasta) != 0) {
+            break;
         }
-    } else {
-        jugador->estado = JUGADOR_SIN_PAREJA;   /* no deberia pasar */
     }
-    pthread_cond_signal(&servidor->cond_matchmaker);
 
-    /* Espera hasta que su partida termine o se sepa que no hay pareja. */
+    /* Si lo cancelaron mientras esperaba, no llega a la cola. */
+    if (jugador->estado == JUGADOR_EN_ESPERA) {
+        servidor->llegados++;
+        if (cola_encolar(servidor->cola, jugador->id)) {
+            if (servidor->opciones.mostrar_eventos) {
+                log_evento(0, "Llega el jugador %d", jugador->id);
+            }
+        } else {
+            jugador->estado = JUGADOR_SIN_PAREJA;   /* no deberia pasar */
+            servidor->resumen.sin_pareja++;
+        }
+        pthread_cond_signal(&servidor->cond_matchmaker);
+    }
+
+    /* Espera hasta que su partida termine, se sepa que no hay pareja o lo cancelen. */
     while (jugador->estado == JUGADOR_EN_ESPERA || jugador->estado == JUGADOR_JUGANDO) {
         pthread_cond_wait(&jugador->cond, &servidor->mutex);
     }
@@ -132,7 +139,8 @@ static int jugar_partida(const Servidor *servidor, int numero, int id_mesa,
         .id_mesa = id_mesa
     };
     ResumenMesa resumen_mesa;
-    if (!mesa_ejecutar(&config, servidor->inicial, &opciones, &resumen_mesa)) {
+    if (!mesa_ejecutar(&config, servidor->usar_inicial ? &servidor->inicial : NULL,
+                       &opciones, &resumen_mesa)) {
         return 0;
     }
     if (servidor->opciones.mostrar_eventos) {
@@ -151,7 +159,7 @@ static void *ejecutar_mesa(void *argumento)
                                   slot->primero, slot->segundo);
 
     pthread_mutex_lock(&servidor->mutex);
-    ResumenServidor *resumen = servidor->resumen;
+    ResumenServidor *resumen = &servidor->resumen;
     if (resultado == 0) {
         resumen->errores++;
     } else if (resultado == 1) {
@@ -171,16 +179,22 @@ static void *ejecutar_mesa(void *argumento)
     return NULL;
 }
 
-static void ejecutar_matchmaker(Servidor *servidor, ResumenServidor *resumen)
+static void ejecutar_matchmaker(Servidor *servidor)
 {
+    ResumenServidor *resumen = &servidor->resumen;
     pthread_mutex_lock(&servidor->mutex);
     for (;;) {
-        /* Espera una pareja y una mesa libre, o que ya no llegue nadie mas. */
-        while (!(cola_tamano(servidor->cola) >= 2 &&
+        /* Espera una pareja y una mesa libre, que ya no llegue nadie mas o que
+         * se detenga el servidor. */
+        while (!servidor->detenido &&
+               !(cola_tamano(servidor->cola) >= 2 &&
                  servidor->mesas_activas < servidor->max_mesas) &&
                !(servidor->llegados >= servidor->esperados &&
                  cola_tamano(servidor->cola) < 2)) {
             pthread_cond_wait(&servidor->cond_matchmaker, &servidor->mutex);
+        }
+        if (servidor->detenido) {
+            break;   /* las partidas en curso terminan solas */
         }
         int primero = 0;
         int segundo = 0;
@@ -247,16 +261,38 @@ static void ejecutar_matchmaker(Servidor *servidor, ResumenServidor *resumen)
     pthread_mutex_unlock(&servidor->mutex);
 }
 
-int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
-                      const OpcionesServidor *opciones, ResumenServidor *resumen)
+/* Libera lo que servidor_crear logro reservar. */
+static void liberar_servidor(Servidor *servidor, int condiciones, int con_mutex, int con_cond)
 {
-    *resumen = (ResumenServidor){0};
+    for (int i = 0; i < condiciones; i++) {
+        pthread_cond_destroy(&servidor->jugadores[i].cond);
+    }
+    if (con_cond) {
+        pthread_cond_destroy(&servidor->cond_matchmaker);
+    }
+    if (con_mutex) {
+        pthread_mutex_destroy(&servidor->mutex);
+    }
+    cola_destruir(servidor->cola);
+    free(servidor->jugadores);
+    free(servidor->slots);
+    free(servidor);
+}
+
+Servidor *servidor_crear(const Configuracion *config, const Tablero *inicial,
+                         const OpcionesServidor *opciones)
+{
     if (config->total_jugadores < 1 || config->max_mesas < 1 ||
         config->retardo_min_ms < 1 ||
         config->retardo_max_ms < config->retardo_min_ms ||
         config->retardo_max_ms > 60000) {
         fprintf(stderr, "Configuracion del servidor invalida.\n");
-        return 0;
+        return NULL;
+    }
+    Servidor *servidor = calloc(1, sizeof(*servidor));
+    if (servidor == NULL) {
+        fprintf(stderr, "No hay memoria para el servidor.\n");
+        return NULL;
     }
     int total = config->total_jugadores;
     /* No hacen falta mas mesas que parejas. */
@@ -264,87 +300,170 @@ int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
     if (config->max_mesas < mesas) {
         mesas = config->max_mesas;
     }
-    Servidor servidor = {.config = *config, .opciones = *opciones, .inicial = inicial,
-                         .resumen = resumen, .max_mesas = mesas};
-    servidor.cola = cola_crear(total);
-    servidor.jugadores = calloc((size_t)total, sizeof(*servidor.jugadores));
-    servidor.slots = calloc((size_t)mesas, sizeof(*servidor.slots));
-    pthread_t *threads = malloc((size_t)total * sizeof(*threads));
-    DatosJugador *datos = malloc((size_t)total * sizeof(*datos));
-    if (servidor.cola == NULL || servidor.jugadores == NULL || servidor.slots == NULL ||
-        threads == NULL || datos == NULL) {
+    servidor->config = *config;
+    servidor->opciones = *opciones;
+    servidor->max_mesas = mesas;
+    if (inicial != NULL) {
+        servidor->inicial = *inicial;
+        servidor->usar_inicial = 1;
+    }
+    servidor->cola = cola_crear(total);
+    servidor->jugadores = calloc((size_t)total, sizeof(*servidor->jugadores));
+    servidor->slots = calloc((size_t)mesas, sizeof(*servidor->slots));
+    if (servidor->cola == NULL || servidor->jugadores == NULL || servidor->slots == NULL) {
         fprintf(stderr, "No hay memoria para el servidor.\n");
-        goto liberar;
+        liberar_servidor(servidor, 0, 0, 0);
+        return NULL;
     }
     for (int i = 0; i < mesas; i++) {
-        servidor.slots[i].servidor = &servidor;
-        servidor.slots[i].indice = i;
+        servidor->slots[i].servidor = servidor;
+        servidor->slots[i].indice = i;
     }
-    int error = pthread_mutex_init(&servidor.mutex, NULL);
+    int error = pthread_mutex_init(&servidor->mutex, NULL);
     if (error != 0) {
         fprintf(stderr, "No se pudo crear el mutex: %s\n", strerror(error));
-        goto liberar;
+        liberar_servidor(servidor, 0, 0, 0);
+        return NULL;
     }
-    error = pthread_cond_init(&servidor.cond_matchmaker, NULL);
+    error = pthread_cond_init(&servidor->cond_matchmaker, NULL);
     if (error != 0) {
         fprintf(stderr, "No se pudo crear la condicion: %s\n", strerror(error));
-        pthread_mutex_destroy(&servidor.mutex);
-        goto liberar;
+        liberar_servidor(servidor, 0, 1, 0);
+        return NULL;
     }
     int condiciones = 0;   /* jugadores con su condicion creada */
     for (int i = 0; i < total; i++) {
-        servidor.jugadores[i].id = i + 1;
-        servidor.jugadores[i].estado = JUGADOR_EN_ESPERA;
-        if (pthread_cond_init(&servidor.jugadores[i].cond, NULL) != 0) {
-            break;
+        servidor->jugadores[i].id = i + 1;
+        servidor->jugadores[i].estado = JUGADOR_EN_ESPERA;
+        error = pthread_cond_init(&servidor->jugadores[i].cond, NULL);
+        if (error != 0) {
+            fprintf(stderr, "No se pudo crear la condicion: %s\n", strerror(error));
+            liberar_servidor(servidor, condiciones, 1, 1);
+            return NULL;
         }
         condiciones++;
     }
+    return servidor;
+}
+
+void servidor_destruir(Servidor *servidor)
+{
+    if (servidor == NULL) {
+        return;
+    }
+    liberar_servidor(servidor, servidor->config.total_jugadores, 1, 1);
+}
+
+void servidor_detener(Servidor *servidor)
+{
+    pthread_mutex_lock(&servidor->mutex);
+    if (servidor->detenido) {
+        pthread_mutex_unlock(&servidor->mutex);
+        return;
+    }
+    servidor->detenido = 1;
+
+    /* Cancela a los que no han llegado y a los que esperan en la cola. Los que
+     * ya estan jugando siguen: su partida termina por su cuenta. */
+    int cancelados = 0;
+    for (int i = 0; i < servidor->config.total_jugadores; i++) {
+        Jugador *jugador = &servidor->jugadores[i];
+        if (jugador->estado == JUGADOR_EN_ESPERA) {
+            jugador->estado = JUGADOR_CANCELADO;
+            cancelados++;
+            pthread_cond_signal(&jugador->cond);
+        }
+    }
+    servidor->resumen.cancelados += cancelados;
+    int vaciado;
+    while (cola_desencolar(servidor->cola, &vaciado)) {
+    }
+    pthread_cond_broadcast(&servidor->cond_matchmaker);
+    pthread_mutex_unlock(&servidor->mutex);
+
+    /* El log se escribe fuera del mutex del servidor. */
+    if (servidor->opciones.mostrar_eventos) {
+        log_evento(0, "Servidor detenido: no entra nadie mas (%d jugadores cancelados)",
+                   cancelados);
+    }
+}
+
+int servidor_correr(Servidor *servidor, ResumenServidor *resumen)
+{
+    int total = servidor->config.total_jugadores;
+    pthread_mutex_lock(&servidor->mutex);
+    int repetido = servidor->corrido;
+    servidor->corrido = 1;
+    pthread_mutex_unlock(&servidor->mutex);
+    if (repetido) {
+        fprintf(stderr, "El servidor ya se ejecuto.\n");
+        *resumen = (ResumenServidor){0};
+        return 0;
+    }
+    pthread_t *threads = malloc((size_t)total * sizeof(*threads));
+    DatosJugador *datos = malloc((size_t)total * sizeof(*datos));
+    if (threads == NULL || datos == NULL) {
+        fprintf(stderr, "No hay memoria para el servidor.\n");
+        free(threads);
+        free(datos);
+        *resumen = (ResumenServidor){0};
+        return 0;
+    }
 
     /* Un thread por jugador. Si alguno falla, se espera solo a los creados. */
-    for (int i = 0; i < condiciones; i++) {
-        datos[i] = (DatosJugador){.servidor = &servidor, .indice = i};
-        error = pthread_create(&threads[i], NULL, ejecutar_jugador, &datos[i]);
+    int creados = 0;
+    for (int i = 0; i < total; i++) {
+        datos[i] = (DatosJugador){.servidor = servidor, .indice = i};
+        int error = pthread_create(&threads[i], NULL, ejecutar_jugador, &datos[i]);
         if (error != 0) {
             fprintf(stderr, "Error al crear el jugador %d: %s\n", i + 1, strerror(error));
             break;
         }
-        resumen->jugadores_creados++;
+        creados++;
     }
-    pthread_mutex_lock(&servidor.mutex);
-    servidor.esperados = resumen->jugadores_creados;
-    pthread_cond_signal(&servidor.cond_matchmaker);
-    pthread_mutex_unlock(&servidor.mutex);
+    pthread_mutex_lock(&servidor->mutex);
+    servidor->resumen.jugadores_creados = creados;
+    servidor->esperados = creados;
+    pthread_cond_signal(&servidor->cond_matchmaker);
+    pthread_mutex_unlock(&servidor->mutex);
 
-    ejecutar_matchmaker(&servidor, resumen);
+    ejecutar_matchmaker(servidor);
 
     /* Recoge los threads de las mesas y despues los de los jugadores. */
-    for (int i = 0; i < mesas; i++) {
-        if (servidor.slots[i].tiene_hilo) {
-            pthread_join(servidor.slots[i].hilo, NULL);
-            servidor.slots[i].tiene_hilo = 0;
+    for (int i = 0; i < servidor->max_mesas; i++) {
+        if (servidor->slots[i].tiene_hilo) {
+            pthread_join(servidor->slots[i].hilo, NULL);
+            servidor->slots[i].tiene_hilo = 0;
         }
     }
-    for (int i = 0; i < resumen->jugadores_creados; i++) {
+    int unidos = 0;
+    for (int i = 0; i < creados; i++) {
         if (pthread_join(threads[i], NULL) == 0) {
-            resumen->jugadores_unidos++;
+            unidos++;
         }
     }
-    resumen->llegados = servidor.llegados;
-    for (int i = 0; i < condiciones; i++) {
-        pthread_cond_destroy(&servidor.jugadores[i].cond);
-    }
-    pthread_cond_destroy(&servidor.cond_matchmaker);
-    pthread_mutex_destroy(&servidor.mutex);
-
-liberar:
-    cola_destruir(servidor.cola);
-    free(servidor.jugadores);
-    free(servidor.slots);
+    pthread_mutex_lock(&servidor->mutex);
+    servidor->resumen.jugadores_unidos = unidos;
+    servidor->resumen.llegados = servidor->llegados;
+    *resumen = servidor->resumen;
+    pthread_mutex_unlock(&servidor->mutex);
     free(threads);
     free(datos);
     return resumen->jugadores_creados == total && resumen->jugadores_unidos == total &&
            resumen->errores == 0 && servidor_resumen_coherente(resumen, total);
+}
+
+int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
+                      const OpcionesServidor *opciones, ResumenServidor *resumen)
+{
+    *resumen = (ResumenServidor){0};
+    Servidor *servidor = servidor_crear(config, inicial, opciones);
+    if (servidor == NULL) {
+        return 0;
+    }
+    int correcto = servidor_correr(servidor, resumen);
+    servidor_destruir(servidor);
+    return correcto;
 }
 
 void servidor_imprimir_resumen(const ResumenServidor *resumen, int max_mesas)

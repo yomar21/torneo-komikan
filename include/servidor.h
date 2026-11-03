@@ -25,10 +25,31 @@ typedef struct {
     int max_simultaneas;     /* mayor numero de mesas activas a la vez */
 } ResumenServidor;
 
+/* El servidor es opaco: se crea con servidor_crear y se libera con servidor_destruir. */
+typedef struct Servidor Servidor;
+
+/* Crea un servidor listo para correr. Con inicial = NULL usa la disposicion por
+ * defecto. Devuelve NULL (y escribe el motivo por stderr) si algo falla. */
+Servidor *servidor_crear(const Configuracion *config, const Tablero *inicial,
+                         const OpcionesServidor *opciones);
+
 /* Hace llegar a los jugadores, los empareja de a 2 y juega cada pareja en una
  * mesa. Nunca hay mas de config->max_mesas mesas activas; si estan todas
- * ocupadas, el resto espera. Con inicial = NULL usa la disposicion por defecto.
- * Devuelve 1 si todo salio bien y 0 si hubo algun error. */
+ * ocupadas, el resto espera. Vuelve cuando terminaron todos los threads.
+ * Se llama una sola vez. Devuelve 1 si todo salio bien y 0 si hubo algun error. */
+int servidor_correr(Servidor *servidor, ResumenServidor *resumen);
+
+/* Deja de aceptar jugadores: los que no han llegado y los que esperan pareja
+ * quedan cancelados. Las partidas en curso terminan por su cuenta. Se puede
+ * llamar desde otro thread, antes, durante o despues de servidor_correr, y
+ * varias veces. */
+void servidor_detener(Servidor *servidor);
+
+/* Libera el servidor. No se debe llamar mientras otro thread esta dentro de
+ * servidor_correr o servidor_detener con este mismo servidor. */
+void servidor_destruir(Servidor *servidor);
+
+/* Crea el servidor, lo corre y lo destruye. */
 int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
                       const OpcionesServidor *opciones, ResumenServidor *resumen);
 
