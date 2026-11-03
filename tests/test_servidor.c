@@ -1,9 +1,13 @@
 #include "servidor.h"
 
+#include "log.h"
+
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define COMPROBAR(condicion) do { \
     comprobaciones++; \
@@ -61,6 +65,8 @@ int main(void)
         COMPROBAR(r.sin_pareja == n % 2);   /* con N impar uno queda sin pareja */
         COMPROBAR(r.victorias_puma + r.victorias_perros == r.partidas);
         COMPROBAR(r.errores == 0);
+        COMPROBAR(servidor_resumen_coherente(&r, n));   /* ningun jugador ni partida se pierde */
+        COMPROBAR(r.cancelados == 0 && r.por_abandono == 0 && r.cancelados_en_partida == 0);
         COMPROBAR(r.max_simultaneas <= 1);   /* con M = 1 las partidas no se solapan */
     }
 
@@ -85,6 +91,7 @@ int main(void)
         COMPROBAR(r8.victorias_puma + r8.victorias_perros == 4);
         COMPROBAR(r8.max_simultaneas >= 1 && r8.max_simultaneas <= mesas[m]);
         COMPROBAR(r8.jugadores_unidos == 8);
+        COMPROBAR(servidor_resumen_coherente(&r8, 8));
         if (mesas[m] == 1) {
             COMPROBAR(r8.max_simultaneas == 1);
         } else {
@@ -99,6 +106,44 @@ int main(void)
     COMPROBAR(rm.partidas == 2 && rm.max_simultaneas <= 2);
     config.max_mesas = 1;
 
+    /* El comprobador de invariantes detecta cuentas que no cuadran. */
+    ResumenServidor falso = {.atendidos = 6, .sin_pareja = 1, .partidas = 3,
+                             .victorias_puma = 2, .victorias_perros = 1};
+    COMPROBAR(servidor_resumen_coherente(&falso, 7));
+    COMPROBAR(!servidor_resumen_coherente(&falso, 8));   /* falta un jugador */
+    falso.partidas = 4;
+    COMPROBAR(!servidor_resumen_coherente(&falso, 7));   /* sobra una partida */
+    falso.partidas = 3;
+    falso.cancelados = 1;
+    COMPROBAR(!servidor_resumen_coherente(&falso, 7));   /* un jugador contado dos veces */
+
+    /* El resumen se escribe en el log con los numeros del torneo. */
+    char ruta[] = "/tmp/torneo_resumen_XXXXXX";
+    int descriptor = mkstemp(ruta);
+    COMPROBAR(descriptor >= 0);
+    close(descriptor);
+    log_consola(0);
+    COMPROBAR(log_iniciar(ruta));
+    ResumenServidor para_imprimir = {.llegados = 7, .atendidos = 6, .sin_pareja = 1,
+                                     .partidas = 3, .victorias_puma = 2,
+                                     .victorias_perros = 1, .max_simultaneas = 2,
+                                     .jugadores_creados = 7, .jugadores_unidos = 7};
+    servidor_imprimir_resumen(&para_imprimir, 3);
+    log_cerrar();
+    log_consola(1);
+    char texto[2048] = "";
+    FILE *archivo = fopen(ruta, "r");
+    COMPROBAR(archivo != NULL);
+    size_t leidos = fread(texto, 1, sizeof texto - 1, archivo);
+    texto[leidos] = '\0';
+    fclose(archivo);
+    unlink(ruta);
+    COMPROBAR(strstr(texto, "[Servidor] ---- Resumen del torneo ----") != NULL);
+    COMPROBAR(strstr(texto, "7 llegaron, 6 jugaron, 1 quedaron sin pareja y 0 cancelados") != NULL);
+    COMPROBAR(strstr(texto, "Partidas: 3 (gana el Puma: 2; ganan los Perros: 1") != NULL);
+    COMPROBAR(strstr(texto, "Maximo de mesas activas a la vez: 2 (limite 3)") != NULL);
+    COMPROBAR(strstr(texto, "recogidos: 7/7") != NULL);
+
     /* Con una disposicion inicial dada. */
     Tablero inicial;
     tablero_inicializar(&inicial);
@@ -107,6 +152,7 @@ int main(void)
     ResumenServidor r;
     COMPROBAR(servidor_ejecutar(&config, &inicial, &opciones, &r));
     COMPROBAR(r.partidas == 2 && r.sin_pareja == 0);
+    COMPROBAR(servidor_resumen_coherente(&r, 4));
 
     /* Quien es el Puma depende solo de la semilla y la partida. */
     int puma_primero = 0;

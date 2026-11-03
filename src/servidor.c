@@ -344,5 +344,28 @@ liberar:
     free(threads);
     free(datos);
     return resumen->jugadores_creados == total && resumen->jugadores_unidos == total &&
-           resumen->errores == 0 && resumen->atendidos + resumen->sin_pareja == total;
+           resumen->errores == 0 && servidor_resumen_coherente(resumen, total);
+}
+
+void servidor_imprimir_resumen(const ResumenServidor *resumen, int max_mesas)
+{
+    log_evento(0, "---- Resumen del torneo ----");
+    log_evento(0, "Jugadores: %d llegaron, %d jugaron, %d quedaron sin pareja y %d cancelados.",
+               resumen->llegados, resumen->atendidos, resumen->sin_pareja, resumen->cancelados);
+    log_evento(0, "Partidas: %d (gana el Puma: %d; ganan los Perros: %d; por abandono: %d; "
+               "canceladas: %d; con error: %d).",
+               resumen->partidas, resumen->victorias_puma, resumen->victorias_perros,
+               resumen->por_abandono, resumen->cancelados_en_partida, resumen->errores);
+    log_evento(0, "Maximo de mesas activas a la vez: %d (limite %d).",
+               resumen->max_simultaneas, max_mesas);
+    log_evento(0, "Threads de jugador recogidos: %d/%d.",
+               resumen->jugadores_unidos, resumen->jugadores_creados);
+}
+
+int servidor_resumen_coherente(const ResumenServidor *resumen, int total)
+{
+    int jugadores = resumen->atendidos + resumen->sin_pareja + resumen->cancelados;
+    int partidas = resumen->victorias_puma + resumen->victorias_perros +
+                   resumen->por_abandono + resumen->cancelados_en_partida + resumen->errores;
+    return jugadores == total && resumen->partidas == partidas;
 }

@@ -26,6 +26,14 @@ make
 ./torneo 5 1 config_ejemplo.txt
 ```
 
+Al terminar, el servidor escribe un resumen con los jugadores que llegaron, jugaron
+y quedaron sin pareja, las partidas (victorias de cada bando, por abandono,
+canceladas y con error) y el maximo de mesas activas a la vez. Las cuentas se
+comprueban entre si: cada jugador y cada partida se cuenta una sola vez.
+
+El programa termina con codigo 0 si el torneo acabo normalmente y con 1 si hubo
+un error (argumentos o configuracion invalidos, o un fallo al crear threads).
+
 Se muestra el tablero completo, incluido el trono, los eventos y el resultado.
 Las conexiones verticales mantienen tres lineas entre posiciones.
 Cada partida recoge sus **13 threads de fichas y el juez**, y al final se informa

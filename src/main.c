@@ -34,14 +34,7 @@ int main(int argc, char *argv[])
     log_iniciar(NULL);
     int correcto = servidor_ejecutar(&config, disposicion, &opciones, &resumen);
 
+    servidor_imprimir_resumen(&resumen, config.max_mesas);
     log_cerrar();
-
-    printf("\nPartidas jugadas: %d (gana el Puma: %d; ganan los Perros: %d).\n",
-           resumen.partidas, resumen.victorias_puma, resumen.victorias_perros);
-    printf("Jugadores: %d llegaron, %d jugaron y %d quedaron sin pareja.\n",
-           resumen.llegados, resumen.atendidos, resumen.sin_pareja);
-    printf("Maximo de mesas activas a la vez: %d.\n", resumen.max_simultaneas);
-    printf("Threads de jugador recogidos: %d/%d.\n",
-           resumen.jugadores_unidos, resumen.jugadores_creados);
     return correcto ? EXIT_SUCCESS : EXIT_FAILURE;
 }

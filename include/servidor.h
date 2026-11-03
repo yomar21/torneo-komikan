@@ -15,9 +15,12 @@ typedef struct {
     int llegados;
     int atendidos;           /* jugadores que jugaron una partida */
     int sin_pareja;
+    int cancelados;          /* jugadores que no jugaron porque se detuvo el servidor */
     int partidas;
     int victorias_puma;
     int victorias_perros;
+    int por_abandono;        /* partidas que terminaron porque un jugador se retiro */
+    int cancelados_en_partida;   /* partidas canceladas mientras se jugaban */
     int errores;             /* partidas que terminaron con error */
     int max_simultaneas;     /* mayor numero de mesas activas a la vez */
 } ResumenServidor;
@@ -28,6 +31,13 @@ typedef struct {
  * Devuelve 1 si todo salio bien y 0 si hubo algun error. */
 int servidor_ejecutar(const Configuracion *config, const Tablero *inicial,
                       const OpcionesServidor *opciones, ResumenServidor *resumen);
+
+/* Escribe el resumen del torneo en el log. max_mesas es el limite M. */
+void servidor_imprimir_resumen(const ResumenServidor *resumen, int max_mesas);
+
+/* Comprueba que las cuentas cuadran: cada jugador tiene un solo destino y cada
+ * partida un solo final. total es el N con el que se ejecuto el torneo. */
+int servidor_resumen_coherente(const ResumenServidor *resumen, int total);
 
 /* Devuelve 1 si el primer jugador de la pareja es el Puma y 0 si juega con
  * los Perros. Depende solo de la semilla y del numero de partida. */
