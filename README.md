@@ -103,7 +103,7 @@ compilacion con GCC en Linux antes de entregar.
 | `src/cola.c` | Cola FIFO circular de enteros; no es thread-safe, la protege el servidor. |
 | `src/configuracion.c` | Valores iniciales y validacion de N y M y lectura de config.txt |
 | `src/tablero.c` | Posiciones, fichas, conexiones y reglas. No administra threads. |
-| `src/mesa.c` | Threads de fichas, juez, cola de propuestas y sincronizacion. |
+| `src/mesa.c` | Threads de fichas, juez, cola de propuestas y sincronizacion. La mesa se crea con `mesa_crear`, se juega con `mesa_jugar`, otro thread puede pedirle terminar con `mesa_cancelar` y se libera con `mesa_destruir`. |
 | `include/` | Tipos y funciones publicas de cada modulo. |
 | `tests/` | Escenarios separados del programa principal. |
 
