@@ -34,7 +34,7 @@ int cola_encolar(Cola *cola, int valor)
     if (cola->cantidad == cola->capacidad) {
         return 0;
     }
-    /* El % hace que el indice "de la vuelta" al final del arreglo. */
+    /* El % da la vuelta al final del arreglo. */
     int posicion = (cola->inicio + cola->cantidad) % cola->capacidad;
     cola->datos[posicion] = valor;
     cola->cantidad++;

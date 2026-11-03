@@ -1,5 +1,7 @@
 #include "mesa.h"
 
+#include "log.h"
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -229,13 +231,13 @@ static void *ejecutar_juez(void *argumento)
 
         /* Imprimimos una copia para no retener el tablero durante la salida. */
         if (mesa->opciones.mostrar_eventos) {
-            printf("[Mesa %d, propuesta %u] Ficha %d: %d -> %d%s: %s\n",
-                   mesa->opciones.id_mesa, numero, propuesta.id, propuesta.origen, propuesta.destino,
-                   propuesta.intermedia >= 0 ? " (captura)" : "",
-                   aceptada ? "aceptada" : "rechazada; el tablero cambio");
+            log_evento(mesa->opciones.id_mesa, "Propuesta %u: ficha %d: %d -> %d%s: %s",
+                       numero, propuesta.id, propuesta.origen, propuesta.destino,
+                       propuesta.intermedia >= 0 ? " (captura)" : "",
+                       aceptada ? "aceptada" : "rechazada; el tablero cambio");
         }
         if (aceptada && mesa->opciones.mostrar_tablero) {
-            tablero_imprimir(&copia);
+            log_tablero(mesa->opciones.id_mesa, &copia);
         }
         pthread_mutex_lock(&mesa->mutex);
     }
@@ -277,8 +279,8 @@ int mesa_ejecutar(const Configuracion *config, const Tablero *inicial,
         return 0;
     }
     if (opciones->mostrar_tablero) {
-        printf("[Mesa %d] Tablero inicial:\n", opciones->id_mesa);
-        tablero_imprimir(&mesa.tablero);
+        log_evento(opciones->id_mesa, "Tablero inicial:");
+        log_tablero(opciones->id_mesa, &mesa.tablero);
     }
     pthread_t juez;
     pthread_t fichas[TOTAL_FICHAS];

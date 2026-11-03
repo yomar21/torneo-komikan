@@ -257,7 +257,7 @@ static char simbolo_ocupante(Ocupante ocupante)
     }
 }
 
-void tablero_imprimir(const Tablero *tablero)
+void tablero_imprimir_en(FILE *salida, const Tablero *tablero)
 {
     enum { ANCHO = 37, ALTO = 25 };
     char dibujo[ALTO][ANCHO + 1];
@@ -313,9 +313,14 @@ void tablero_imprimir(const Tablero *tablero)
             memcpy(&dibujo[(y + 2) * 4][x * 8], nodo, 5);
         }
     }
-    printf("\nTablero completo (P=Puma, D=Perro, .=vacia)\n");
+    fprintf(salida, "\nTablero completo (P=Puma, D=Perro, .=vacia)\n");
     for (int fila = 0; fila < ALTO; fila++) {
-        printf("%s\n", dibujo[fila]);
+        fprintf(salida, "%s\n", dibujo[fila]);
     }
-    printf("Capturados: %d\n\n", tablero->perros_capturados);
+    fprintf(salida, "Capturados: %d\n\n", tablero->perros_capturados);
+}
+
+void tablero_imprimir(const Tablero *tablero)
+{
+    tablero_imprimir_en(stdout, tablero);
 }

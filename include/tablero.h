@@ -1,6 +1,8 @@
 #ifndef TABLERO_H
 #define TABLERO_H
 
+#include <stdio.h>
+
 #define LADO_CUADRICULA 5
 #define MAX_POSICIONES 32
 /* Conservamos el nombre anterior para no romper codigo ya escrito. */
@@ -30,6 +32,7 @@ typedef enum {
 void tablero_inicializar(Tablero *tablero);
 void tablero_colocar_fichas_iniciales(Tablero *tablero);
 void tablero_imprimir(const Tablero *tablero);
+void tablero_imprimir_en(FILE *salida, const Tablero *tablero);
 int tablero_buscar_ficha(const Tablero *tablero, int identificador);
 int tablero_colocar_fichas(Tablero *tablero, int pos_puma,const int pos_perros[TOTAL_PERROS]);
 int tablero_estado_consistente(const Tablero *tablero);

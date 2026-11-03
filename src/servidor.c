@@ -1,6 +1,7 @@
 #include "servidor.h"
 
 #include "cola.h"
+#include "log.h"
 #include "mesa.h"
 
 #include <errno.h>
@@ -94,7 +95,7 @@ static void *ejecutar_jugador(void *argumento)
     servidor->llegados++;
     if (cola_encolar(servidor->cola, jugador->id)) {
         if (servidor->opciones.mostrar_eventos) {
-            printf("[Servidor] Llega el jugador %d\n", jugador->id);
+            log_evento(0, "Llega el jugador %d", jugador->id);
         }
     } else {
         jugador->estado = JUGADOR_SIN_PAREJA;   /* no deberia pasar */
@@ -118,8 +119,8 @@ static int jugar_partida(const Servidor *servidor, int numero, int id_mesa,
     int id_puma = puma_primero ? primero : segundo;
     int id_perros = puma_primero ? segundo : primero;
     if (servidor->opciones.mostrar_eventos) {
-        printf("[Servidor] Mesa %d: jugador %d (Puma) vs jugador %d (Perros)\n",
-               id_mesa, id_puma, id_perros);
+        log_evento(0, "Mesa %d: jugador %d (Puma) vs jugador %d (Perros)",
+                   id_mesa, id_puma, id_perros);
     }
 
     Configuracion config = servidor->config;
@@ -135,8 +136,8 @@ static int jugar_partida(const Servidor *servidor, int numero, int id_mesa,
         return 0;
     }
     if (servidor->opciones.mostrar_eventos) {
-        printf("[Servidor] Fin de la partida %d (mesa %d): %s\n", numero, id_mesa,
-               mesa_describir_cierre(&resumen_mesa));
+        log_evento(0, "Fin de la partida %d (mesa %d): %s", numero, id_mesa,
+                   mesa_describir_cierre(&resumen_mesa));
     }
     return resumen_mesa.resultado == VICTORIA_PUMA ? 1 : 2;
 }
@@ -237,7 +238,7 @@ static void ejecutar_matchmaker(Servidor *servidor, ResumenServidor *resumen)
                 resumen->sin_pareja++;
                 pthread_cond_signal(&servidor->jugadores[primero - 1].cond);
                 if (servidor->opciones.mostrar_eventos) {
-                    printf("[Servidor] Jugador %d sin pareja: no hay oponente\n", primero);
+                    log_evento(0, "Jugador %d sin pareja: no hay oponente", primero);
                 }
             }
             break;

@@ -99,6 +99,7 @@ compilacion con GCC en Linux antes de entregar.
 | --- | --- |
 | `src/main.c` | Lee argumentos, llama al servidor y presenta el resumen. |
 | `src/servidor.c` | Threads de jugador, matchmaker (parejas de a 2) y hasta M mesas simultaneas, cada una en su thread. |
+| `src/log.c` | Salida unica con mutex: prefijo `[Mesa k]` o `[Servidor]` y tableros que no se mezclan entre mesas. |
 | `src/cola.c` | Cola FIFO circular de enteros; no es thread-safe, la protege el servidor. |
 | `src/configuracion.c` | Valores iniciales y validacion de N y M y lectura de config.txt |
 | `src/tablero.c` | Posiciones, fichas, conexiones y reglas. No administra threads. |

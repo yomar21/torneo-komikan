@@ -1,4 +1,5 @@
 #include "configuracion.h"
+#include "log.h"
 #include "servidor.h"
 
 #include <stdio.h>
@@ -30,7 +31,10 @@ int main(int argc, char *argv[])
 
     OpcionesServidor opciones = {.mostrar_eventos = 1, .mostrar_tablero = 1};
     ResumenServidor resumen;
+    log_iniciar(NULL);
     int correcto = servidor_ejecutar(&config, disposicion, &opciones, &resumen);
+
+    log_cerrar();
 
     printf("\nPartidas jugadas: %d (gana el Puma: %d; ganan los Perros: %d).\n",
            resumen.partidas, resumen.victorias_puma, resumen.victorias_perros);
