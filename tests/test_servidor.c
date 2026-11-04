@@ -108,6 +108,7 @@ int main(void)
         COMPROBAR(r.errores == 0);
         COMPROBAR(servidor_resumen_coherente(&r, n));   /* ningun jugador ni partida se pierde */
         COMPROBAR(r.cancelados == 0 && r.por_abandono == 0 && r.cancelados_en_partida == 0);
+        COMPROBAR(r.fallos_jugadores == 0 && r.fallos_sin_partida == 0);
         COMPROBAR(r.max_simultaneas <= 1);   /* con M = 1 las partidas no se solapan */
     }
 

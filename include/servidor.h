@@ -22,6 +22,8 @@ typedef struct {
     int por_abandono;        /* partidas que terminaron porque un jugador se retiro */
     int cancelados_en_partida;   /* partidas canceladas mientras se jugaban */
     int errores;             /* partidas que terminaron con error */
+    int fallos_jugadores;    /* hilos terminados inesperadamente durante la partida */
+    int fallos_sin_partida;  /* jugadores que fallaron antes de ser emparejados */
     int max_simultaneas;     /* mayor numero de mesas activas a la vez */
 } ResumenServidor;
 

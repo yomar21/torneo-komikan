@@ -9,7 +9,8 @@ typedef enum {
     MESA_LIMITE_PRUEBA,
     MESA_ERROR,
     MESA_CANCELADA,            /* otro thread pidio terminar: no hay ganador */
-    MESA_ABANDONO              /* un jugador se retiro: gana el oponente */
+    MESA_ABANDONO,             /* un jugador se retiro: gana el oponente */
+    MESA_FALLO_JUGADOR         /* el juez detecto una salida inesperada */
 } MotivoCierre;
 
 typedef enum { BANDO_PUMA, BANDO_PERROS } Bando;
@@ -31,6 +32,7 @@ typedef struct {
     int fichas_creadas;
     int fichas_unidas;
     int juez_unido;
+    int fallo_detectado_por_juez; /* el juez atendio el aviso de fallo */
     Tablero tablero_final;
 } ResumenMesa;
 
@@ -55,6 +57,12 @@ void mesa_cancelar(Mesa *mesa);
  * puede llamar desde otro thread, antes, durante o despues de mesa_jugar. Si la
  * partida ya habia terminado, o si otro cierre llego antes, no cambia nada. */
 void mesa_abandono(Mesa *mesa, Bando quien_abandona);
+
+/* El supervisor SOLO notifica la salida inesperada del jugador. El juez,
+ * y no el hilo fallido, detecta el aviso y determina el ganador. El aviso
+ * queda almacenado si el juez aun no arranco. Seguro bajo concurrencia con
+ * mesa_jugar, mesa_abandono y mesa_cancelar. */
+void mesa_notificar_fallo(Mesa *mesa, Bando quien_fallo);
 
 /* Libera la mesa. No se debe llamar mientras otro thread esta dentro de
  * mesa_jugar o mesa_cancelar con esta misma mesa. */

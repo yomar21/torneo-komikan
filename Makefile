@@ -5,7 +5,7 @@ LDLIBS = -pthread
 
 SOURCES = src/main.c src/configuracion.c src/tablero.c src/mesa.c src/log.c src/cola.c src/servidor.c
 HEADERS = $(wildcard include/*.h)
-TEST_BINS = build/test_tablero build/test_mesa build/test_configuracion build/test_cola build/test_servidor build/test_log
+TEST_BINS = build/test_tablero build/test_mesa build/test_configuracion build/test_cola build/test_servidor build/test_log build/test_fallo_jugador
 
 .PHONY: all test test-sanitize test-tsan test-sigint test-sigint-tsan clean
 
@@ -49,12 +49,18 @@ build/test_log: tests/test_log.c src/log.c src/tablero.c $(HEADERS) | build
 build/test_servidor: tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
 
+# La prueba incluye servidor.c para inducir pthread_cancel sin agregar APIs
+# artificiales de fallos a la aplicacion publica.
+build/test_fallo_jugador: tests/test_fallo_jugador.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_fallo_jugador.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
+
 test: $(TEST_BINS)
 	./build/test_tablero
 	./build/test_configuracion
 	./build/test_mesa
 	./build/test_cola
 	./build/test_servidor
+	./build/test_fallo_jugador
 	./build/test_log
 
 build/test_tablero_san: tests/test_tablero.c src/tablero.c $(HEADERS) | build
@@ -75,23 +81,29 @@ build/test_log_tsan: tests/test_log.c src/log.c src/tablero.c $(HEADERS) | build
 build/test_servidor_san: tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
 
+build/test_fallo_jugador_san: tests/test_fallo_jugador.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_fallo_jugador.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
+
 build/test_servidor_tsan: tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=thread tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
 
 build/test_mesa_tsan: tests/test_mesa.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=thread tests/test_mesa.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
 
-test-sanitize: build/test_tablero_san build/test_mesa_san build/test_cola_san build/test_servidor_san build/test_log_san
+test-sanitize: build/test_tablero_san build/test_mesa_san build/test_cola_san build/test_servidor_san build/test_fallo_jugador_san build/test_log_san
 	./build/test_tablero_san
 	./build/test_mesa_san
 	./build/test_cola_san
 	./build/test_servidor_san
+	./build/test_fallo_jugador_san
 	./build/test_log_san
 
+# Las pruebas que fuerzan pthread_cancel se ejecutan sin TSAN: aqui el
+# sanitizador puede quedar detenido durante esa operacion. El resto si usa TSAN.
 test-tsan: build/test_mesa_tsan build/test_servidor_tsan build/test_log_tsan
 	./build/test_mesa_tsan
 	./build/test_servidor_tsan
 	./build/test_log_tsan
 
 clean:
-	rm -f torneo $(TEST_BINS) build/test_log_san build/test_log_tsan build/torneo_san build/torneo_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan
+	rm -f torneo $(TEST_BINS) build/test_log_san build/test_log_tsan build/torneo_san build/torneo_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan build/test_fallo_jugador_san

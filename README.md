@@ -90,6 +90,31 @@ tomado: ninguno mantiene un lock fuera de las funciones de la mesa, y la mesa
 siempre libera sus mutex y condiciones al cerrarse. Ejemplo:
 `prob_abandono=100` y `abandono_max_ms=200` hacen que casi toda partida termine por abandono.
 
+**Fallo inesperado de un hilo de jugador.** Ademas del abandono programado,
+el servidor registra un handler `pthread_cleanup_push` por jugador. Si el hilo
+termina mediante `pthread_cancel` o `pthread_exit` mientras juega, el handler
+notifica la salida inesperada, marca al bando responsable y llama a
+`mesa_notificar_fallo` (o guarda el aviso si la mesa aun se esta creando).
+La notificacion NO adjudica la victoria: el hilo juez se despierta con la
+condicion de mesa, inspecciona el aviso bajo su mutex y resuelve la partida
+con `MESA_FALLO_JUGADOR`, declarando al contrario ganador por abandono. Los
+hilos de la mesa terminan y se recogen normalmente. La
+limpieza respeta el mutex del servidor aun si la cancelacion sucede durante
+`pthread_cond_wait`; si ocurre antes del emparejamiento, el jugador se quita de
+la cola y el matchmaker deja de esperarlo. Los contadores distinguen fallos
+de hilos durante la partida y antes de jugar. `make test` incluye pruebas que
+cancelan hilos reales de ambos bandos, comprueban que fue el juez quien
+resolvio el fallo y verifican la liberacion de mutex y condiciones despues
+de hacer `join` a todos los hilos. La cancelacion POSIX es diferida y solo
+se habilita durante las esperas `pthread_cond_wait/timedwait`; POSIX recupera
+el mutex antes de llamar al handler, que lo libera. Ningun jugador toma el
+mutex interno de la mesa. No se destruyen mutexes con otros hilos vivos.
+
+**Limite de la recuperacion:** esto protege ante terminaciones recuperables de
+threads. Una senal fatal no manejada como `SIGSEGV` normalmente finaliza TODO el
+proceso POSIX. Para tolerar caidas arbitrarias seria necesario aislar a los
+jugadores en procesos y supervisarlos con IPC; no se afirma esa garantia aqui.
+
 Reglas de la disposicion: `puma` y `perros` se definen juntas o ninguna; no puede
 haber posiciones repetidas ni un perro sobre el Puma. El orden de la lista
 `perros` asigna los identificadores 2 a 13.
@@ -162,7 +187,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion (Listo).
 - Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
-- Detectar abandonos o fallos internos de jugadores y adjudicar el resultado (Listo).
+- Detectar abandonos y salidas inesperadas recuperables de hilos de jugador (Listo; fallos fatales del proceso quedan fuera del modelo de threads).
 - Atender SIGINT: dejar de aceptar jugadores, cancelar las partidas en curso y cerrar sin fugas (Listo, `make test-sigint`).
 - Evaluar concurrencia, escalabilidad y recursos en Linux.
 - Redactar el informe PDF de hasta dos paginas.

@@ -30,6 +30,8 @@ struct Mesa {
     int jugada;                /* mesa_jugar ya se llamo */
     int terminada;
     int error;
+    int fallo_pendiente;     /* 1 si el supervisor notifico un hilo fallido */
+    Bando bando_fallido;    /* protegido por mutex; lo evalua solo el juez */
     Propuesta propuestas[TOTAL_FICHAS];
     int cola[TOTAL_FICHAS];
     int cabeza;
@@ -58,6 +60,19 @@ static void terminar(Mesa *mesa, MotivoCierre motivo, ResultadoPartida resultado
     mesa->resumen.motivo = motivo;
     mesa->resumen.resultado = resultado;
     pthread_cond_broadcast(&mesa->cambio);
+}
+
+/* Bajo el mutex: ningun otro hilo decide el resultado por fallo.
+ * La funcion se ejecuta EXCLUSIVAMENTE desde ejecutar_juez. */
+static int juez_detectar_fallo(Mesa *mesa)
+{
+    if (mesa->terminada || !mesa->fallo_pendiente) {
+        return 0;
+    }
+    mesa->resumen.fallo_detectado_por_juez = 1;
+    terminar(mesa, MESA_FALLO_JUGADOR,
+            mesa->bando_fallido == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
+    return 1;
 }
 
 static int esperar_cambio(Mesa *mesa)
@@ -179,7 +194,7 @@ static void *ejecutar_juez(void *argumento)
     while (!mesa->iniciada && !mesa->terminada) {
         esperar_cambio(mesa);
     }
-    if (!mesa->terminada) {
+    if (!mesa->terminada && !juez_detectar_fallo(mesa)) {
         ResultadoPartida resultado = tablero_evaluar_resultado(&mesa->tablero);
         if (resultado != PARTIDA_EN_CURSO) {
             terminar(mesa, resultado == ESTADO_INVALIDO ? MESA_ERROR : MESA_POR_VICTORIA,
@@ -188,10 +203,13 @@ static void *ejecutar_juez(void *argumento)
     }
 
     while (!mesa->terminada) {
-        while (mesa->cantidad == 0 && !mesa->terminada) {
+        if (juez_detectar_fallo(mesa)) {
+            break;
+        }
+        while (mesa->cantidad == 0 && !mesa->terminada && !mesa->fallo_pendiente) {
             esperar_cambio(mesa);
         }
-        if (mesa->terminada) {
+        if (juez_detectar_fallo(mesa) || mesa->terminada) {
             break;
         }
         int indice = mesa->cola[mesa->cabeza];
@@ -301,12 +319,28 @@ void mesa_cancelar(Mesa *mesa)
     }
 }
 
+/* Notificacion asincrona: nunca adjudica por si sola la victoria.
+ * El juez sera despertado por cambio incluso si no hay propuestas. */
+void mesa_notificar_fallo(Mesa *mesa, Bando quien_fallo)
+{
+    pthread_mutex_lock(&mesa->mutex);
+    if (!mesa->terminada && !mesa->fallo_pendiente) {
+        mesa->fallo_pendiente = 1;
+        mesa->bando_fallido = quien_fallo;
+        pthread_cond_broadcast(&mesa->cambio);
+    }
+    pthread_mutex_unlock(&mesa->mutex);
+}
+
 void mesa_abandono(Mesa *mesa, Bando quien_abandona)
 {
     pthread_mutex_lock(&mesa->mutex);
-    int efectiva = !mesa->terminada;
-    terminar(mesa, MESA_ABANDONO,
-             quien_abandona == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
+    /* Si llego primero el fallo, su resolucion queda reservada al juez. */
+    int efectiva = !mesa->terminada && !mesa->fallo_pendiente;
+    if (efectiva) {
+        terminar(mesa, MESA_ABANDONO,
+                quien_abandona == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
+    }
     pthread_mutex_unlock(&mesa->mutex);
     /* El log se escribe fuera del mutex de la mesa. */
     if (efectiva && mesa->opciones.mostrar_eventos) {
@@ -426,6 +460,11 @@ const char *mesa_describir_cierre(const ResumenMesa *resumen)
     }
     if (resumen->motivo == MESA_CANCELADA) {
         return "partida cancelada; sin ganador";
+    }
+    if (resumen->motivo == MESA_FALLO_JUGADOR) {
+        return resumen->resultado == VICTORIA_PUMA
+            ? "fallo inesperado de jugador: gana el Puma por abandono"
+            : "fallo inesperado de jugador: ganan los Perros por abandono";
     }
     if (resumen->motivo == MESA_ABANDONO) {
         return resumen->resultado == VICTORIA_PUMA ? "gana el Puma por abandono"
