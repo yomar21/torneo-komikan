@@ -9,6 +9,8 @@ typedef struct {
     int retardo_min_ms;
     int retardo_max_ms;
     unsigned int semilla;
+    int prob_abandono;      /* 0 a 100: % de jugadores que se retiran a mitad de partida */
+    int abandono_max_ms;    /* el retiro ocurre entre 0 y este tiempo despues de empezar */
 
     int usar_disposicion;
     int pos_puma;

@@ -301,6 +301,21 @@ void mesa_cancelar(Mesa *mesa)
     }
 }
 
+void mesa_abandono(Mesa *mesa, Bando quien_abandona)
+{
+    pthread_mutex_lock(&mesa->mutex);
+    int efectiva = !mesa->terminada;
+    terminar(mesa, MESA_ABANDONO,
+             quien_abandona == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
+    pthread_mutex_unlock(&mesa->mutex);
+    /* El log se escribe fuera del mutex de la mesa. */
+    if (efectiva && mesa->opciones.mostrar_eventos) {
+        log_evento(mesa->opciones.id_mesa, "%s abandona la partida: %s por abandono",
+                   quien_abandona == BANDO_PUMA ? "El jugador del Puma" : "El jugador de los Perros",
+                   quien_abandona == BANDO_PUMA ? "ganan los Perros" : "gana el Puma");
+    }
+}
+
 void mesa_destruir(Mesa *mesa)
 {
     if (mesa == NULL) {
@@ -411,6 +426,10 @@ const char *mesa_describir_cierre(const ResumenMesa *resumen)
     }
     if (resumen->motivo == MESA_CANCELADA) {
         return "partida cancelada; sin ganador";
+    }
+    if (resumen->motivo == MESA_ABANDONO) {
+        return resumen->resultado == VICTORIA_PUMA ? "gana el Puma por abandono"
+                                                   : "ganan los Perros por abandono";
     }
     if (resumen->resultado == VICTORIA_PUMA) {
         return "gana el Puma";

@@ -8,8 +8,11 @@ typedef enum {
     MESA_POR_VICTORIA,
     MESA_LIMITE_PRUEBA,
     MESA_ERROR,
-    MESA_CANCELADA             /* otro thread pidio terminar: no hay ganador */
+    MESA_CANCELADA,            /* otro thread pidio terminar: no hay ganador */
+    MESA_ABANDONO              /* un jugador se retiro: gana el oponente */
 } MotivoCierre;
+
+typedef enum { BANDO_PUMA, BANDO_PERROS } Bando;
 
 typedef struct {
     unsigned int limite_propuestas;
@@ -47,6 +50,11 @@ int mesa_jugar(Mesa *mesa, ResumenMesa *resumen);
  * otro thread, antes, durante o despues de mesa_jugar, y varias veces: si la
  * partida ya habia terminado no cambia nada. */
 void mesa_cancelar(Mesa *mesa);
+
+/* Un jugador se retira: la partida termina y gana su oponente por abandono. Se
+ * puede llamar desde otro thread, antes, durante o despues de mesa_jugar. Si la
+ * partida ya habia terminado, o si otro cierre llego antes, no cambia nada. */
+void mesa_abandono(Mesa *mesa, Bando quien_abandona);
 
 /* Libera la mesa. No se debe llamar mientras otro thread esta dentro de
  * mesa_jugar o mesa_cancelar con esta misma mesa. */

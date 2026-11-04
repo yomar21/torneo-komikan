@@ -277,6 +277,60 @@ int main(void)
     COMPROBAR(rl.victorias_puma + rl.victorias_perros + rl.por_abandono == 0);
     COMPROBAR(rl.jugadores_unidos == 20);
 
+    /* Abandonos: con probabilidad 100 y partidas lentas, todas terminan por abandono. */
+    Configuracion ab = configuracion_por_defecto();
+    ab.total_jugadores = 20;
+    ab.max_mesas = 3;
+    ab.retardo_min_ms = 20;
+    ab.retardo_max_ms = 40;
+    ab.prob_abandono = 100;
+    ab.abandono_max_ms = 30;
+    ResumenServidor ra;
+    COMPROBAR(servidor_ejecutar(&ab, NULL, &silencio, &ra));
+    COMPROBAR(servidor_resumen_coherente(&ra, 20));
+    COMPROBAR(ra.partidas == 10 && ra.por_abandono == 10 && ra.atendidos == 20);
+    COMPROBAR(ra.victorias_puma + ra.victorias_perros == 0 && ra.errores == 0);
+    COMPROBAR(ra.max_simultaneas <= 3 && ra.jugadores_unidos == 20);
+
+    /* Probabilidad 0: nadie abandona, como antes. */
+    ab.prob_abandono = 0;
+    ab.retardo_min_ms = 1;
+    ab.retardo_max_ms = 3;
+    ab.total_jugadores = 20;
+    COMPROBAR(servidor_ejecutar(&ab, NULL, &silencio, &ra));
+    COMPROBAR(ra.por_abandono == 0 && ra.partidas == 10);
+    COMPROBAR(ra.victorias_puma + ra.victorias_perros == 10);
+
+    /* Probabilidad 50 con muchos jugadores: algunas partidas acaban por abandono y
+     * otras por victoria, y las cuentas cuadran. */
+    ab.total_jugadores = 100;
+    ab.max_mesas = 4;
+    ab.prob_abandono = 50;
+    ab.abandono_max_ms = 40;
+    COMPROBAR(servidor_ejecutar(&ab, NULL, &silencio, &ra));
+    COMPROBAR(servidor_resumen_coherente(&ra, 100));
+    COMPROBAR(ra.partidas == 50 && ra.por_abandono > 0);
+    COMPROBAR(ra.victorias_puma + ra.victorias_perros + ra.por_abandono == ra.partidas);
+    COMPROBAR(ra.errores == 0 && ra.max_simultaneas <= 4 && ra.jugadores_unidos == 100);
+
+    /* Abandonos y Ctrl+C juntos: nada se cuelga y las cuentas cuadran. */
+    ab.total_jugadores = 40;
+    ab.max_mesas = 2;
+    ab.prob_abandono = 100;
+    ab.abandono_max_ms = 60;
+    for (int i = 0; i < 10; i++) {
+        COMPROBAR(torneo_detenido(&ab, i * 10, 1, &ra));
+        COMPROBAR(servidor_resumen_coherente(&ra, 40));
+        COMPROBAR(ra.jugadores_unidos == 40 && ra.errores == 0);
+    }
+
+    /* Valores invalidos. */
+    ab.prob_abandono = 101;
+    COMPROBAR(!servidor_ejecutar(&ab, NULL, &silencio, &ra));
+    ab.prob_abandono = 0;
+    ab.abandono_max_ms = 0;
+    COMPROBAR(!servidor_ejecutar(&ab, NULL, &silencio, &ra));
+
     /* Quien es el Puma depende solo de la semilla y la partida. */
     int puma_primero = 0;
     for (int partida = 1; partida <= 100; partida++) {

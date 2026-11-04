@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #define COMPROBAR(condicion) do { \
@@ -29,6 +30,23 @@ static void *cancelar_despues(void *argumento)
     for (int i = 0; i < datos->veces; i++) {
         mesa_cancelar(datos->mesa);
     }
+    return NULL;
+}
+
+typedef struct {
+    Mesa *mesa;
+    int espera_ms;
+    Bando bando;
+} DatosAbandono;
+
+/* Thread auxiliar: espera un poco y hace que un jugador se retire. */
+static void *abandonar_despues(void *argumento)
+{
+    DatosAbandono *datos = argumento;
+    struct timespec pausa = {.tv_sec = datos->espera_ms / 1000,
+                             .tv_nsec = (long)(datos->espera_ms % 1000) * 1000000L};
+    nanosleep(&pausa, NULL);
+    mesa_abandono(datos->mesa, datos->bando);
     return NULL;
 }
 
@@ -189,6 +207,72 @@ int main(void)
     ResumenMesa otro;
     COMPROBAR(!mesa_jugar(mesa, &otro));
     mesa_destruir(mesa);
+
+    /* Abandono: el oponente gana, en todos los casos se recogen los 14 hilos. */
+    for (int bando = 0; bando < 2; bando++) {
+        mesa = mesa_crear(&lenta, NULL, &sin_limite);
+        COMPROBAR(mesa != NULL);
+        /* Abandona en pleno juego, desde otro thread, a los 50 ms. */
+        DatosAbandono ab = {.mesa = mesa, .espera_ms = 50, .bando = bando == 0 ? BANDO_PUMA : BANDO_PERROS};
+        COMPROBAR(pthread_create(&auxiliar, NULL, abandonar_despues, &ab) == 0);
+        COMPROBAR(mesa_jugar(mesa, &resumen));
+        COMPROBAR(pthread_join(auxiliar, NULL) == 0);
+        COMPROBAR(resumen.motivo == MESA_ABANDONO);
+        COMPROBAR(resumen.resultado == (bando == 0 ? VICTORIA_PERROS : VICTORIA_PUMA));
+        COMPROBAR(resumen.fichas_creadas == TOTAL_FICHAS && resumen.fichas_unidas == TOTAL_FICHAS);
+        COMPROBAR(resumen.juez_unido);
+        COMPROBAR(tablero_estado_consistente(&resumen.tablero_final));
+        COMPROBAR(strstr(mesa_describir_cierre(&resumen), "abandono") != NULL);
+        mesa_destruir(mesa);
+    }
+
+    /* Abandono antes de empezar a jugar. */
+    mesa = mesa_crear(&lenta, NULL, &sin_limite);
+    COMPROBAR(mesa != NULL);
+    mesa_abandono(mesa, BANDO_PUMA);
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PERROS);
+    COMPROBAR(resumen.propuestas == 0);
+    COMPROBAR(resumen.fichas_unidas == TOTAL_FICHAS && resumen.juez_unido);
+    mesa_destruir(mesa);
+
+    /* El primero que llega manda: abandono y cancelacion juntos, o dos abandonos. */
+    mesa = mesa_crear(&lenta, NULL, &sin_limite);
+    COMPROBAR(mesa != NULL);
+    mesa_cancelar(mesa);
+    mesa_abandono(mesa, BANDO_PERROS);    /* llega tarde: no cambia el cierre */
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_CANCELADA && resumen.resultado == PARTIDA_EN_CURSO);
+    mesa_destruir(mesa);
+
+    mesa = mesa_crear(&lenta, NULL, &sin_limite);
+    COMPROBAR(mesa != NULL);
+    mesa_abandono(mesa, BANDO_PERROS);
+    mesa_abandono(mesa, BANDO_PUMA);      /* el segundo abandono se ignora */
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PUMA);
+    mesa_destruir(mesa);
+
+    /* Abandono despues de terminar, y abandono compitiendo con el fin natural. */
+    mesa = mesa_crear(&config, NULL, &con_limite);
+    COMPROBAR(mesa != NULL);
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_LIMITE_PRUEBA);
+    mesa_abandono(mesa, BANDO_PUMA);      /* ya habia terminado: no pasa nada */
+    mesa_destruir(mesa);
+    for (int espera = 0; espera <= 100; espera += 20) {
+        OpcionesMesa cinco = {.limite_propuestas = 5};
+        mesa = mesa_crear(&lenta, NULL, &cinco);
+        COMPROBAR(mesa != NULL);
+        DatosAbandono ab = {.mesa = mesa, .espera_ms = espera, .bando = BANDO_PERROS};
+        COMPROBAR(pthread_create(&auxiliar, NULL, abandonar_despues, &ab) == 0);
+        COMPROBAR(mesa_jugar(mesa, &resumen));
+        COMPROBAR(pthread_join(auxiliar, NULL) == 0);
+        COMPROBAR((resumen.motivo == MESA_LIMITE_PRUEBA && resumen.propuestas == 5) ||
+                  (resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PUMA));
+        COMPROBAR(resumen.fichas_unidas == TOTAL_FICHAS && resumen.juez_unido);
+        mesa_destruir(mesa);
+    }
 
     printf("Mesa: %d comprobaciones correctas, 20 simulaciones, "
            "%u capturas y %u propuestas obsoletas rechazadas.\n",

@@ -19,6 +19,8 @@ Configuracion configuracion_por_defecto(void)
         .retardo_min_ms = 50,
         .retardo_max_ms = 300,
         .semilla = 0,
+        .prob_abandono = 0,
+        .abandono_max_ms = 1000,
         .usar_disposicion = 0,
         .pos_puma = -1
     };
@@ -170,6 +172,7 @@ int configuracion_leer_archivo(const char *ruta, Configuracion *config)
 
     /* Una bandera por clave, para detectar claves repetidas */
     int vista_min = 0, vista_max = 0, vista_semilla = 0;
+    int vista_prob = 0, vista_abandono = 0;
     int vista_puma = 0, vista_perros = 0;
 
     /* +2: el '\n' y el '\0' */
@@ -252,6 +255,36 @@ int configuracion_leer_archivo(const char *ruta, Configuracion *config)
                 break;
             }
 
+        } else if (strcmp(clave, "prob_abandono") == 0) {
+            if (vista_prob) {
+                error_en_linea(ruta, numero_linea, "clave repetida");
+                ok = 0;
+                break;
+            }
+            vista_prob = 1;
+            if (!leer_entero_en_rango(valor, 0, 100, &numero)) {
+                error_en_linea(ruta, numero_linea,
+                               "prob_abandono debe ser un entero entre 0 y 100");
+                ok = 0;
+                break;
+            }
+            copia.prob_abandono = (int)numero;
+
+        } else if (strcmp(clave, "abandono_max_ms") == 0) {
+            if (vista_abandono) {
+                error_en_linea(ruta, numero_linea, "clave repetida");
+                ok = 0;
+                break;
+            }
+            vista_abandono = 1;
+            if (!leer_entero_en_rango(valor, 1, RETARDO_MAXIMO_MS, &numero)) {
+                error_en_linea(ruta, numero_linea,
+                               "abandono_max_ms debe ser un entero entre 1 y 60000");
+                ok = 0;
+                break;
+            }
+            copia.abandono_max_ms = (int)numero;
+
         } else if (strcmp(clave, "puma") == 0) {
             if (vista_puma) {
                 error_en_linea(ruta, numero_linea, "clave repetida");
@@ -317,6 +350,8 @@ int configuracion_leer_archivo(const char *ruta, Configuracion *config)
         config->retardo_min_ms = copia.retardo_min_ms;
         config->retardo_max_ms = copia.retardo_max_ms;
         config->semilla = copia.semilla;
+        config->prob_abandono = copia.prob_abandono;
+        config->abandono_max_ms = copia.abandono_max_ms;
         if (vista_puma && vista_perros) {
             config->usar_disposicion = 1;
             config->pos_puma = copia.pos_puma;

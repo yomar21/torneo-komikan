@@ -67,8 +67,18 @@ Todas las claves son opcionales y ninguna puede repetirse.
 | `retardo_min_ms` | entero de 1 a 60000 | 50 |
 | `retardo_max_ms` | entero de 1 a 60000, no menor que el minimo | 300 |
 | `semilla` | entero sin signo (el 0 es valido) | 0 |
+| `prob_abandono` | entero de 0 a 100: porcentaje de jugadores que se retiran | 0 |
+| `abandono_max_ms` | entero de 1 a 60000: el retiro ocurre entre 0 y este tiempo tras empezar la partida | 1000 |
 | `puma` | posicion de 0 a TOTAL_POSICIONES-1 | 25 |
 | `perros` | exactamente 12 posiciones validas del tablero, separadas por coma | 10,14,15 a 24 |
+
+**Abandono de jugadores.** Con `prob_abandono` mayor que 0, cada jugador decide con su
+propio generador si se retirara de su partida y en que instante. Si la partida
+sigue en curso cuando llega ese instante, el Juez la cierra de inmediato y el
+oponente gana **por abandono**. El jugador que se retira no puede dejar nada
+tomado: ninguno mantiene un lock fuera de las funciones de la mesa, y la mesa
+siempre libera sus mutex y condiciones al cerrarse. Ejemplo:
+`prob_abandono=100` y `abandono_max_ms=200` hacen que casi toda partida termine por abandono.
 
 Reglas de la disposicion: `puma` y `perros` se definen juntas o ninguna; no puede
 haber posiciones repetidas ni un perro sobre el Puma. El orden de la lista
@@ -142,7 +152,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion (Listo).
 - Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
-- Detectar abandonos o fallos internos de jugadores y adjudicar el resultado.
+- Detectar abandonos o fallos internos de jugadores y adjudicar el resultado (Listo).
 - Atender SIGINT: dejar de aceptar jugadores y cancelar las partidas en curso (Listo). Falta verificar el cierre sin fugas.
 - Evaluar concurrencia, escalabilidad y recursos en Linux.
 - Redactar el informe PDF de hasta dos paginas.

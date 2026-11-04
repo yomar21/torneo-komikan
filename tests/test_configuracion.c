@@ -201,6 +201,26 @@ static void probar_validos(void)
 /* Archivos invalidos                                                  */
 /* ------------------------------------------------------------------ */
 
+static void probar_abandono(void)
+{
+    Configuracion c = configuracion_por_defecto();
+    COMPROBAR(c.prob_abandono == 0 && c.abandono_max_ms == 1000);   /* por defecto: nadie abandona */
+
+    COMPROBAR(leer_texto("prob_abandono=40\nabandono_max_ms=500\n", &c) == 1);
+    COMPROBAR(c.prob_abandono == 40 && c.abandono_max_ms == 500);
+
+    c = configuracion_por_defecto();
+    COMPROBAR(leer_texto("prob_abandono=0\n", &c) == 1 && c.prob_abandono == 0);
+    COMPROBAR(leer_texto("prob_abandono=100\n", &c) == 1 && c.prob_abandono == 100);
+    COMPROBAR(leer_texto("abandono_max_ms=1\n", &c) == 1 && c.abandono_max_ms == 1);
+    COMPROBAR(leer_texto("abandono_max_ms=60000\n", &c) == 1 && c.abandono_max_ms == 60000);
+
+    /* Si el archivo es invalido, no se cambia nada (todo o nada). */
+    c = configuracion_por_defecto();
+    COMPROBAR(leer_texto("prob_abandono=40\nabandono_max_ms=0\n", &c) == 0);
+    COMPROBAR(c.prob_abandono == 0 && c.abandono_max_ms == 1000);
+}
+
 static void probar_invalidos(void)
 {
     static const char *casos[] = {
@@ -229,6 +249,17 @@ static void probar_invalidos(void)
         "puma=0\nperros=1,2,3,4,5,6,7,8,9,10,11,12,\n",  /* coma final */
         "puma=0\nperros=1,,3,4,5,6,7,8,9,10,11,12\n",    /* '1,,3' */
         "puma=0\nperros=,1,2,3,4,5,6,7,8,9,10,11\n",     /* coma inicial */
+        "prob_abandono=101\n",                           /* maximo + 1 */
+        "prob_abandono=-1\n",
+        "prob_abandono=50%\n",                           /* basura */
+        "prob_abandono=\n",                              /* valor vacio */
+        "prob_abandono=1\nprob_abandono=2\n",           /* clave repetida */
+        "abandono_max_ms=0\n",                           /* minimo - 1 */
+        "abandono_max_ms=60001\n",                       /* maximo + 1 */
+        "abandono_max_ms=10ms\n",                        /* basura */
+        "abandono_max_ms=1\nabandono_max_ms=2\n",       /* clave repetida */
+        /* error en una linea tardia: lo anterior no debe quedar aplicado */
+        "prob_abandono=40\nabandono_max_ms=500\nmalo\n",
         /* error en una linea tardia: lo anterior no debe quedar aplicado */
         "semilla=5\nretardo_min_ms=10\nretardo_max_ms=20\nmalo\n",
     };
@@ -271,6 +302,7 @@ int main(void)
     probar_argumentos();
     probar_argumentos_con_archivo();
     probar_validos();
+    probar_abandono();
     probar_invalidos();
     probar_borde_de_posiciones();
 

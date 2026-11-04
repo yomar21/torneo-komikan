@@ -23,16 +23,19 @@ typedef struct {
     int id;                  /* de 1 a N */
     EstadoJugador estado;    /* se usa solo con el mutex tomado */
     pthread_cond_t cond;     /* aqui espera el jugador */
+    struct SlotMesa *slot;   /* su partida; se fija al emparejarlo */
+    Bando bando;
 } Jugador;
 
 /* Una mesa fisica. Hay a lo mas M y se reutilizan. */
-typedef struct {
+typedef struct SlotMesa {
     Servidor *servidor;
     int indice;              /* el id de la mesa es indice + 1 */
     int ocupado;             /* se usa solo con el mutex tomado */
     int tiene_hilo;          /* hay un thread que falta recoger con join */
     pthread_t hilo;
     Mesa *mesa;              /* mesa en juego; solo con el mutex del servidor tomado */
+    int abandono;            /* 0 = nadie; 1 = abandona el Puma; 2 = abandonan los Perros */
     int numero;              /* numero de la partida */
     int primero;
     int segundo;
@@ -79,6 +82,9 @@ static void *ejecutar_jugador(void *argumento)
     unsigned int estado = servidor->config.semilla ^
                           (2654435761u * (unsigned int)jugador->id);
     int ms = rand_r(&estado) % (servidor->config.retardo_max_ms + 1);
+    /* Con su propio generador decide si se retirara de su partida y cuando. */
+    int abandonara = rand_r(&estado) % 100 < servidor->config.prob_abandono;
+    int ms_abandono = rand_r(&estado) % (servidor->config.abandono_max_ms + 1);
     struct timespec hasta;
     timespec_get(&hasta, TIME_UTC);
     hasta.tv_sec += ms / 1000;
@@ -110,8 +116,42 @@ static void *ejecutar_jugador(void *argumento)
         pthread_cond_signal(&servidor->cond_matchmaker);
     }
 
-    /* Espera hasta que su partida termine, se sepa que no hay pareja o lo cancelen. */
-    while (jugador->estado == JUGADOR_EN_ESPERA || jugador->estado == JUGADOR_JUGANDO) {
+    /* Espera pareja. */
+    while (jugador->estado == JUGADOR_EN_ESPERA) {
+        pthread_cond_wait(&jugador->cond, &servidor->mutex);
+    }
+
+    /* Ya juega. Si le toca retirarse, espera su instante o el fin de la partida. */
+    if (jugador->estado == JUGADOR_JUGANDO && abandonara) {
+        struct timespec plazo;
+        timespec_get(&plazo, TIME_UTC);
+        plazo.tv_sec += ms_abandono / 1000;
+        plazo.tv_nsec += (long)(ms_abandono % 1000) * 1000000L;
+        if (plazo.tv_nsec >= 1000000000L) {
+            plazo.tv_sec++;
+            plazo.tv_nsec -= 1000000000L;
+        }
+        while (jugador->estado == JUGADOR_JUGANDO) {
+            if (pthread_cond_timedwait(&jugador->cond, &servidor->mutex, &plazo) != 0) {
+                break;
+            }
+        }
+        if (jugador->estado == JUGADOR_JUGANDO) {
+            /* Vencio el plazo y su partida sigue. Se avisa con el mutex del servidor
+             * tomado: asi el hilo de la mesa no puede destruirla en medio. Si la mesa
+             * aun no existe, queda anotado y la mesa lo respeta al crearse. */
+            SlotMesa *slot = jugador->slot;
+            if (slot->abandono == 0) {
+                slot->abandono = jugador->bando == BANDO_PUMA ? 1 : 2;
+            }
+            if (slot->mesa != NULL) {
+                mesa_abandono(slot->mesa, jugador->bando);
+            }
+        }
+    }
+
+    /* Espera hasta que su partida termine o lo cancelen. */
+    while (jugador->estado == JUGADOR_JUGANDO) {
         pthread_cond_wait(&jugador->cond, &servidor->mutex);
     }
     pthread_mutex_unlock(&servidor->mutex);
@@ -120,7 +160,7 @@ static void *ejecutar_jugador(void *argumento)
 
 /* Juega una partida. Se llama sin el mutex tomado.
  * Devuelve 0 si hubo un error, 1 si gano el Puma, 2 si ganaron los Perros y
- * 3 si la partida se cancelo. */
+ * 3 si la partida se cancelo y 4 si termino por abandono. */
 static int jugar_partida(Servidor *servidor, SlotMesa *slot, int numero, int id_mesa,
                          int primero, int segundo)
 {
@@ -151,9 +191,13 @@ static int jugar_partida(Servidor *servidor, SlotMesa *slot, int numero, int id_
     pthread_mutex_lock(&servidor->mutex);
     slot->mesa = mesa;
     int ya_detenido = servidor->detenido;
+    int abandono = slot->abandono;
     pthread_mutex_unlock(&servidor->mutex);
     if (ya_detenido) {
         mesa_cancelar(mesa);
+    }
+    if (abandono != 0) {
+        mesa_abandono(mesa, abandono == 1 ? BANDO_PUMA : BANDO_PERROS);
     }
 
     ResumenMesa resumen_mesa;
@@ -175,6 +219,9 @@ static int jugar_partida(Servidor *servidor, SlotMesa *slot, int numero, int id_
     }
     if (resumen_mesa.motivo == MESA_CANCELADA) {
         return 3;
+    }
+    if (resumen_mesa.motivo == MESA_ABANDONO) {
+        return 4;
     }
     return resumen_mesa.resultado == VICTORIA_PUMA ? 1 : 2;
 }
@@ -198,6 +245,9 @@ static void *ejecutar_mesa(void *argumento)
         resumen->atendidos += 2;
     } else if (resultado == 2) {
         resumen->victorias_perros++;
+        resumen->atendidos += 2;
+    } else if (resultado == 4) {
+        resumen->por_abandono++;
         resumen->atendidos += 2;
     } else {
         /* Partida cancelada por Ctrl+C: sus dos jugadores quedan cancelados. */
@@ -254,6 +304,15 @@ static void ejecutar_matchmaker(Servidor *servidor)
             slot->numero = ++resumen->partidas;
             slot->primero = primero;
             slot->segundo = segundo;
+            slot->abandono = 0;
+            int puma_primero = servidor_puma_es_primero(servidor->config.semilla, slot->numero);
+            servidor->jugadores[primero - 1].slot = slot;
+            servidor->jugadores[primero - 1].bando = puma_primero ? BANDO_PUMA : BANDO_PERROS;
+            servidor->jugadores[segundo - 1].slot = slot;
+            servidor->jugadores[segundo - 1].bando = puma_primero ? BANDO_PERROS : BANDO_PUMA;
+            /* Les avisa que ya juegan: si les toca retirarse, empiezan a contar. */
+            pthread_cond_signal(&servidor->jugadores[primero - 1].cond);
+            pthread_cond_signal(&servidor->jugadores[segundo - 1].cond);
             servidor->mesas_activas++;
             if (servidor->mesas_activas > resumen->max_simultaneas) {
                 resumen->max_simultaneas = servidor->mesas_activas;
@@ -322,7 +381,9 @@ Servidor *servidor_crear(const Configuracion *config, const Tablero *inicial,
     if (config->total_jugadores < 1 || config->max_mesas < 1 ||
         config->retardo_min_ms < 1 ||
         config->retardo_max_ms < config->retardo_min_ms ||
-        config->retardo_max_ms > 60000) {
+        config->retardo_max_ms > 60000 ||
+        config->prob_abandono < 0 || config->prob_abandono > 100 ||
+        config->abandono_max_ms < 1 || config->abandono_max_ms > 60000) {
         fprintf(stderr, "Configuracion del servidor invalida.\n");
         return NULL;
     }
