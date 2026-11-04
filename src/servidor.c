@@ -32,6 +32,7 @@ typedef struct {
     int ocupado;             /* se usa solo con el mutex tomado */
     int tiene_hilo;          /* hay un thread que falta recoger con join */
     pthread_t hilo;
+    Mesa *mesa;              /* mesa en juego; solo con el mutex del servidor tomado */
     int numero;              /* numero de la partida */
     int primero;
     int segundo;
@@ -118,8 +119,9 @@ static void *ejecutar_jugador(void *argumento)
 }
 
 /* Juega una partida. Se llama sin el mutex tomado.
- * Devuelve 0 si hubo un error, 1 si gano el Puma y 2 si ganaron los Perros. */
-static int jugar_partida(const Servidor *servidor, int numero, int id_mesa,
+ * Devuelve 0 si hubo un error, 1 si gano el Puma, 2 si ganaron los Perros y
+ * 3 si la partida se cancelo. */
+static int jugar_partida(Servidor *servidor, SlotMesa *slot, int numero, int id_mesa,
                          int primero, int segundo)
 {
     int puma_primero = servidor_puma_es_primero(servidor->config.semilla, numero);
@@ -138,14 +140,41 @@ static int jugar_partida(const Servidor *servidor, int numero, int id_mesa,
         .mostrar_tablero = servidor->opciones.mostrar_tablero,
         .id_mesa = id_mesa
     };
+    Mesa *mesa = mesa_crear(&config, servidor->usar_inicial ? &servidor->inicial : NULL,
+                            &opciones);
+    if (mesa == NULL) {
+        return 0;
+    }
+
+    /* Desde aqui servidor_detener puede cancelar esta mesa. Si ya se detuvo, la
+     * cancelamos nosotros: asi no se escapa una mesa creada justo despues. */
+    pthread_mutex_lock(&servidor->mutex);
+    slot->mesa = mesa;
+    int ya_detenido = servidor->detenido;
+    pthread_mutex_unlock(&servidor->mutex);
+    if (ya_detenido) {
+        mesa_cancelar(mesa);
+    }
+
     ResumenMesa resumen_mesa;
-    if (!mesa_ejecutar(&config, servidor->usar_inicial ? &servidor->inicial : NULL,
-                       &opciones, &resumen_mesa)) {
+    int correcto = mesa_jugar(mesa, &resumen_mesa);
+
+    /* El puntero se borra ANTES de destruir la mesa, con el mutex del servidor
+     * tomado: asi servidor_detener nunca toca una mesa ya liberada. */
+    pthread_mutex_lock(&servidor->mutex);
+    slot->mesa = NULL;
+    pthread_mutex_unlock(&servidor->mutex);
+    mesa_destruir(mesa);
+
+    if (!correcto) {
         return 0;
     }
     if (servidor->opciones.mostrar_eventos) {
         log_evento(0, "Fin de la partida %d (mesa %d): %s", numero, id_mesa,
                    mesa_describir_cierre(&resumen_mesa));
+    }
+    if (resumen_mesa.motivo == MESA_CANCELADA) {
+        return 3;
     }
     return resumen_mesa.resultado == VICTORIA_PUMA ? 1 : 2;
 }
@@ -155,21 +184,29 @@ static void *ejecutar_mesa(void *argumento)
 {
     SlotMesa *slot = argumento;
     Servidor *servidor = slot->servidor;
-    int resultado = jugar_partida(servidor, slot->numero, slot->indice + 1,
+    int resultado = jugar_partida(servidor, slot, slot->numero, slot->indice + 1,
                                   slot->primero, slot->segundo);
 
     pthread_mutex_lock(&servidor->mutex);
     ResumenServidor *resumen = &servidor->resumen;
+    EstadoJugador estado_final = JUGADOR_FINALIZADO;
     if (resultado == 0) {
         resumen->errores++;
+        resumen->atendidos += 2;
     } else if (resultado == 1) {
         resumen->victorias_puma++;
-    } else {
+        resumen->atendidos += 2;
+    } else if (resultado == 2) {
         resumen->victorias_perros++;
+        resumen->atendidos += 2;
+    } else {
+        /* Partida cancelada por Ctrl+C: sus dos jugadores quedan cancelados. */
+        resumen->cancelados_en_partida++;
+        resumen->cancelados += 2;
+        estado_final = JUGADOR_CANCELADO;
     }
-    resumen->atendidos += 2;
-    servidor->jugadores[slot->primero - 1].estado = JUGADOR_FINALIZADO;
-    servidor->jugadores[slot->segundo - 1].estado = JUGADOR_FINALIZADO;
+    servidor->jugadores[slot->primero - 1].estado = estado_final;
+    servidor->jugadores[slot->segundo - 1].estado = estado_final;
     slot->ocupado = 0;
     servidor->mesas_activas--;
     pthread_cond_signal(&servidor->jugadores[slot->primero - 1].cond);
@@ -194,7 +231,7 @@ static void ejecutar_matchmaker(Servidor *servidor)
             pthread_cond_wait(&servidor->cond_matchmaker, &servidor->mutex);
         }
         if (servidor->detenido) {
-            break;   /* las partidas en curso terminan solas */
+            break;   /* servidor_detener ya cancelo las mesas en juego */
         }
         int primero = 0;
         int segundo = 0;
@@ -379,12 +416,23 @@ void servidor_detener(Servidor *servidor)
     while (cola_desencolar(servidor->cola, &vaciado)) {
     }
     pthread_cond_broadcast(&servidor->cond_matchmaker);
+
+    /* Pide a cada mesa en juego que termine. Orden de locks: servidor -> mesa.
+     * Ninguna mesa toma el mutex del servidor mientras tiene el suyo. El puntero
+     * es NULL cuando la mesa ya termino, asi que nunca se cancela una liberada. */
+    int mesas_canceladas = 0;
+    for (int i = 0; i < servidor->max_mesas; i++) {
+        if (servidor->slots[i].mesa != NULL) {
+            mesa_cancelar(servidor->slots[i].mesa);
+            mesas_canceladas++;
+        }
+    }
     pthread_mutex_unlock(&servidor->mutex);
 
     /* El log se escribe fuera del mutex del servidor. */
     if (servidor->opciones.mostrar_eventos) {
-        log_evento(0, "Servidor detenido: no entra nadie mas (%d jugadores cancelados)",
-                   cancelados);
+        log_evento(0, "Servidor detenido: no entra nadie mas (%d jugadores cancelados, "
+                   "%d mesas canceladas)", cancelados, mesas_canceladas);
     }
 }
 

@@ -204,7 +204,7 @@ int main(void)
     COMPROBAR(time(NULL) - antes < 30);   /* no se quedo colgado */
     COMPROBAR(servidor_resumen_coherente(&rp, 200));
     COMPROBAR(rp.cancelados > 0 && rp.cancelados < 200);
-    COMPROBAR(rp.partidas >= 1 && rp.atendidos == 2 * rp.partidas);
+    COMPROBAR(rp.partidas >= 1 && rp.atendidos == 2 * (rp.partidas - rp.cancelados_en_partida));
     COMPROBAR(rp.errores == 0 && rp.max_simultaneas <= 3);
     COMPROBAR(rp.jugadores_creados == 200 && rp.jugadores_unidos == 200);
 
@@ -247,7 +247,7 @@ int main(void)
     COMPROBAR(torneo_detenido(&repartida, 20, 1, &rr));
     COMPROBAR(servidor_resumen_coherente(&rr, 60));
     COMPROBAR(rr.llegados < 60 && rr.cancelados > 0);   /* no llegaron todos */
-    COMPROBAR(rr.atendidos == 2 * rr.partidas && rr.errores == 0);
+    COMPROBAR(rr.atendidos == 2 * (rr.partidas - rr.cancelados_en_partida) && rr.errores == 0);
 
     /* Repetir la parada muchas veces, a tiempos distintos, para buscar carreras. */
     config.total_jugadores = 40;
@@ -257,10 +257,25 @@ int main(void)
         COMPROBAR(torneo_detenido(&config, i * 2, 1, &rs));
         COMPROBAR(servidor_resumen_coherente(&rs, 40));
         COMPROBAR(rs.jugadores_creados == 40 && rs.jugadores_unidos == 40);
-        COMPROBAR(rs.atendidos == 2 * rs.partidas && rs.errores == 0);
+        COMPROBAR(rs.atendidos == 2 * (rs.partidas - rs.cancelados_en_partida) && rs.errores == 0);
         COMPROBAR(rs.max_simultaneas <= 2);
     }
     config.max_mesas = 1;
+
+    /* Ctrl+C con partidas LENTAS en juego: se cancelan enseguida, sin esperar a que
+     * acaben (con retardos de 50 a 300 ms una partida dura muchos segundos). */
+    Configuracion lenta = configuracion_por_defecto();
+    lenta.total_jugadores = 20;
+    lenta.max_mesas = 3;
+    ResumenServidor rl;
+    time_t inicio_lento = time(NULL);
+    COMPROBAR(torneo_detenido(&lenta, 450, 1, &rl));
+    COMPROBAR(time(NULL) - inicio_lento < 4);   /* tardaria mucho mas sin cancelar */
+    COMPROBAR(servidor_resumen_coherente(&rl, 20));
+    COMPROBAR(rl.partidas == 3 && rl.cancelados_en_partida == 3);   /* las 3 mesas en juego */
+    COMPROBAR(rl.atendidos == 0 && rl.cancelados == 20 && rl.errores == 0);
+    COMPROBAR(rl.victorias_puma + rl.victorias_perros + rl.por_abandono == 0);
+    COMPROBAR(rl.jugadores_unidos == 20);
 
     /* Quien es el Puma depende solo de la semilla y la partida. */
     int puma_primero = 0;

@@ -40,7 +40,7 @@ Servidor *servidor_crear(const Configuracion *config, const Tablero *inicial,
 int servidor_correr(Servidor *servidor, ResumenServidor *resumen);
 
 /* Deja de aceptar jugadores: los que no han llegado y los que esperan pareja
- * quedan cancelados. Las partidas en curso terminan por su cuenta. Se puede
+ * quedan cancelados, y las partidas en curso se cancelan (sin ganador). Se puede
  * llamar desde otro thread, antes, durante o despues de servidor_correr, y
  * varias veces. */
 void servidor_detener(Servidor *servidor);
