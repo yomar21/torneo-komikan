@@ -7,7 +7,7 @@ SOURCES = src/main.c src/configuracion.c src/tablero.c src/mesa.c src/log.c src/
 HEADERS = $(wildcard include/*.h)
 TEST_BINS = build/test_tablero build/test_mesa build/test_configuracion build/test_cola build/test_servidor build/test_log
 
-.PHONY: all test test-sanitize test-tsan clean
+.PHONY: all test test-sanitize test-tsan test-sigint test-sigint-tsan clean
 
 all: torneo
 
@@ -16,6 +16,20 @@ torneo: $(SOURCES) $(HEADERS)
 
 build:
 	mkdir -p build
+
+build/torneo_san: $(SOURCES) $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer $(SOURCES) -o $@ $(LDLIBS)
+
+build/torneo_tsan: $(SOURCES) $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=thread $(SOURCES) -o $@ $(LDLIBS)
+
+# Ctrl+C: con el programa normal y con ASan (que ademas busca fugas de memoria).
+test-sigint: torneo build/torneo_san
+	sh tests/test_sigint.sh ./torneo
+	sh tests/test_sigint.sh ./build/torneo_san
+
+test-sigint-tsan: build/torneo_tsan
+	sh tests/test_sigint.sh ./build/torneo_tsan
 
 build/test_tablero: tests/test_tablero.c src/tablero.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_tablero.c src/tablero.c -o $@ $(LDLIBS)
@@ -80,4 +94,4 @@ test-tsan: build/test_mesa_tsan build/test_servidor_tsan build/test_log_tsan
 	./build/test_log_tsan
 
 clean:
-	rm -f torneo $(TEST_BINS) build/test_log_san build/test_log_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan
+	rm -f torneo $(TEST_BINS) build/test_log_san build/test_log_tsan build/torneo_san build/torneo_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan

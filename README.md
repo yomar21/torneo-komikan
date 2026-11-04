@@ -37,6 +37,16 @@ mas parejas. Las partidas que ya estan en juego se cancelan de forma ordenada (s
 ganador) y el programa sale solo, mostrando el resumen. Las senales las atiende un thread
 dedicado (con `sigwait`), porque un manejador clasico no puede usar mutex ni el log.
 
+Al terminar, tanto en la salida normal como con Ctrl+C, el programa recoge todos sus
+threads (matchmaker, jugadores, mesas y senales), destruye sus mutex y condiciones,
+libera la memoria y cierra el log. No usa memoria compartida, semaforos con nombre
+ni descriptores propios, asi que no deja recursos huerfanos en el sistema. El
+mensaje final es `Torneo finalizado` o `Servidor detenido por SIGINT`.
+`make test-sigint` lo comprueba: lanza un torneo grande, lo interrumpe a los 0,2, 1 y
+2 segundos y verifica codigo de salida 0, que no queda ningun proceso vivo, que solo
+hay descriptores 0, 1 y 2, que `/dev/shm` e IPC no cambian y, con AddressSanitizer,
+que no hay fugas de memoria.
+
 El programa termina con codigo 0 si el torneo acabo normalmente y con 1 si hubo
 un error (argumentos o configuracion invalidos, o un fallo al crear threads).
 
@@ -153,7 +163,7 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
 - Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
 - Detectar abandonos o fallos internos de jugadores y adjudicar el resultado (Listo).
-- Atender SIGINT: dejar de aceptar jugadores y cancelar las partidas en curso (Listo). Falta verificar el cierre sin fugas.
+- Atender SIGINT: dejar de aceptar jugadores, cancelar las partidas en curso y cerrar sin fugas (Listo, `make test-sigint`).
 - Evaluar concurrencia, escalabilidad y recursos en Linux.
 - Redactar el informe PDF de hasta dos paginas.
 

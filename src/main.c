@@ -4,6 +4,7 @@
 
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@ typedef struct {
     Servidor *servidor;
     sigset_t senales;
 } DatosSenales;
+
+static atomic_int interrumpido;   /* 1 si llego Ctrl+C */
 
 /* Thread dedicado a las senales. Un manejador clasico no puede tomar mutex ni
  * usar el log; aqui, con sigwait, si. SIGUSR1 es el aviso interno de cierre. */
@@ -26,6 +29,7 @@ static void *atender_senales(void *argumento)
         if (senal == SIGUSR1) {
             break;
         }
+        atomic_store(&interrumpido, 1);
         log_evento(0, "Ctrl+C recibido: no se aceptan mas jugadores");
         servidor_detener(datos->servidor);   /* con otro Ctrl+C no pasa nada mas */
     }
@@ -62,6 +66,13 @@ int main(int argc, char *argv[])
     sigemptyset(&senales.senales);
     sigaddset(&senales.senales, SIGINT);
     sigaddset(&senales.senales, SIGUSR1);
+    /* Un shell no interactivo deja SIGINT ignorado en los procesos de segundo plano:
+     * se restaura la accion por defecto para que sigwait lo reciba siempre. */
+    struct sigaction por_defecto;
+    memset(&por_defecto, 0, sizeof por_defecto);
+    por_defecto.sa_handler = SIG_DFL;
+    sigemptyset(&por_defecto.sa_mask);
+    sigaction(SIGINT, &por_defecto, NULL);
     sigset_t anterior;
     int error = pthread_sigmask(SIG_BLOCK, &senales.senales, &anterior);
     if (error != 0) {
@@ -96,6 +107,8 @@ int main(int argc, char *argv[])
         pthread_join(hilo_senales, NULL);
     }
     servidor_imprimir_resumen(&resumen, config.max_mesas);
+    log_evento(0, atomic_load(&interrumpido) ? "Servidor detenido por SIGINT"
+                                              : "Torneo finalizado");
     log_cerrar();
     servidor_destruir(servidor);
     return correcto ? EXIT_SUCCESS : EXIT_FAILURE;

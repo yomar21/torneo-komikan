@@ -1,0 +1,2 @@
+retardo_min_ms=50
+retardo_max_ms=300
