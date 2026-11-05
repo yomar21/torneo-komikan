@@ -228,6 +228,15 @@ static void *ejecutar_jugador(void *argumento)
         }
     }
 
+#ifdef KOMIKAN_TEST_FALLO_INTEGRADO
+    /* Unicamente en el ejecutable de pruebas: provoca la terminacion real
+     * del jugador 1 tras el emparejamiento. La rutina POSIX registrada arriba
+     * notifica al juez; el ejecutable normal no contiene esta ruta. */
+    if (jugador->estado == JUGADOR_JUGANDO && jugador->id == 1) {
+        pthread_exit(PTHREAD_CANCELED);
+    }
+#endif
+
     /* Ya juega. Si le toca retirarse, espera su instante o el fin de la partida. */
     if (jugador->estado == JUGADOR_JUGANDO && abandonara) {
         struct timespec plazo;
@@ -254,8 +263,8 @@ static void *ejecutar_jugador(void *argumento)
             SlotMesa *slot = jugador->slot;
             if (slot->abandono == 0) {
                 slot->abandono = jugador->bando == BANDO_PUMA ? 1 : 2;
-                /* Solo el primer aviso decide: nunca pisar un fallo previo
-                 * que el juez aun no pudo procesar al crear la mesa. */
+                /* Solo el primer aviso se entrega. El juez, NO el hilo del
+                 * jugador, decidira el resultado cuando procese el evento. */
                 if (slot->mesa != NULL) {
                     mesa_abandono(slot->mesa, jugador->bando);
                 }

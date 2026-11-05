@@ -2,17 +2,17 @@
 
 Tarea 2 de Sistemas Operativos, desarrollada por **Thiare y Yomar** en C17.
 
-## Estado del avance
+## Estado del proyecto
 
-Ya funciona una **mesa concurrente**: un thread por ficha (1 Puma y 12 Perros),
+El sistema implementa una **mesa concurrente**: un thread por ficha (1 Puma y 12 Perros),
 un thread juez, retardos aleatorios y un tablero compartido protegido con un
 mutex POSIX. Las fichas proponen acciones y el juez las valida en orden de llegada.
 No hay turnos alternados entre bandos.
 
-Este avance todavia no es el torneo completo. Ya funciona `./torneo N M` con
-cualquier N: los N jugadores llegan de forma concurrente (un thread por jugador),
-se emparejan de a 2 y cada pareja juega su partida en una mesa. Nunca hay mas de
-M mesas activas a la vez: si estan todas ocupadas, los jugadores restantes
+El torneo funciona con `./torneo N M` y un numero positivo N de jugadores, sujeto
+a los recursos disponibles del sistema operativo. Cada jugador se representa
+con un hilo; el servidor forma parejas y asigna a cada una una mesa. Nunca hay
+mas de M mesas activas a la vez: si estan todas ocupadas, los jugadores restantes
 esperan sin gastar CPU hasta que se libera una. Si N es impar, el ultimo
 jugador queda sin pareja y el programa termina sin colgarse.
 
@@ -56,11 +56,11 @@ Cada partida recoge sus **13 threads de fichas y el juez**, y al final se inform
 que se recogieron todos los threads de jugador.
 Una ficha capturada deja de actuar y su thread termina.
 
-La demostracion tiene un limite de **500 propuestas**, definido en `src/main.c`.
-Si se alcanza antes de una victoria, la mesa termina **sin ganador**. Este limite
-es una proteccion provisional para las pruebas, no una regla del Komikan.
-Con movimientos aleatorios no se puede prometer que toda partida tenga una
-victoria en una cantidad determinada de acciones.
+Las partidas del ejecutable principal **no tienen limite de propuestas**:
+`src/servidor.c` configura `limite_propuestas = 0`. El limite configurable
+se conserva solamente como herramienta para pruebas de mesa. Con movimientos
+aleatorios no se puede garantizar que toda partida termine en una cantidad
+determinada de acciones ni en un tiempo maximo fijo.
 
 ## Archivo de configuracion
 
@@ -82,13 +82,16 @@ Todas las claves son opcionales y ninguna puede repetirse.
 | `puma` | posicion de 0 a TOTAL_POSICIONES-1 | 25 |
 | `perros` | exactamente 12 posiciones validas del tablero, separadas por coma | 10,14,15 a 24 |
 
-**Abandono de jugadores.** Con `prob_abandono` mayor que 0, cada jugador decide con su
-propio generador si se retirara de su partida y en que instante. Si la partida
-sigue en curso cuando llega ese instante, el Juez la cierra de inmediato y el
-oponente gana **por abandono**. El jugador que se retira no puede dejar nada
-tomado: ninguno mantiene un lock fuera de las funciones de la mesa, y la mesa
-siempre libera sus mutex y condiciones al cerrarse. Ejemplo:
-`prob_abandono=100` y `abandono_max_ms=200` hacen que casi toda partida termine por abandono.
+**Abandono de jugadores.** Con `prob_abandono` mayor que 0, cada jugador decide con
+su propio generador si se retirara de su partida y en que instante. Cuando se
+cumple el plazo, `mesa_abandono()` registra un aviso bajo el mutex de la mesa,
+pero **no adjudica el resultado**. El juez se despierta, comprueba el aviso y
+declara ganador al oponente con `MESA_ABANDONO`. El primer aviso de retiro
+(abandono voluntario o fallo inesperado) prevalece; si la partida ya termino,
+no se cambia el ganador. Se espera a todos los hilos antes de destruir los
+mutexes y las variables de condicion. Ejemplo: `prob_abandono=100` y
+`abandono_max_ms=200` suelen terminar la partida por abandono antes de una
+victoria ordinaria.
 
 **Fallo inesperado de un hilo de jugador.** Ademas del abandono programado,
 el servidor registra un handler `pthread_cleanup_push` por jugador. Si el hilo
@@ -140,6 +143,18 @@ que incluya los sanitizadores:
 make test-sanitize
 ```
 
+Para comprobar el flujo completo de un fallo recuperable desde el ejecutable
+(prueba compilada con una inyeccion de fallo habilitada **solo** para tests):
+
+```sh
+make test-integracion-fallo
+```
+
+El ejecutable normal `./torneo` no incluye la inyeccion. La prueba provoca
+la salida de un hilo de jugador ya emparejado, y verifica que el juez
+adjudique la victoria por abandono, el resumen contabilice el fallo y se
+recojan ambos hilos. Ademas, `make test` ejecuta esta prueba integrada.
+
 Para revisar carreras de datos entre threads:
 
 ```sh
@@ -170,6 +185,15 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 
 ## Reglas adoptadas
 
+El docente autorizo libertad para definir las conexiones de la variante.
+Por ello modelamos el tablero como un grafo fijo de 29 posiciones y 66
+conexiones. La cuadricula admite diagonales alternadas para ampliar las
+opciones de movimiento y captura, y el cruce central del trono se considera
+una posicion jugable. La misma tabla de conexiones se aplica a todas las
+partidas; el juez sigue comprobando adyacencia, casilla libre y capturas
+colineales, bajo el mutex de la mesa. Esta variante no pretende reproducir
+exactamente cada linea de la figura de referencia del enunciado.
+
 - Cuadricula 5x5 con conexiones horizontales, verticales y diagonales alternadas.
 - Trono con cuatro posiciones adicionales: 25, 26, 27 y 28; total de 29.
 - El cruce central del trono se considera posicion jugable.
@@ -181,16 +205,19 @@ Para estudiar el flujo y las decisiones, ver [el avance explicado](docs/avance.m
 - Gana el Puma con seis capturas. Ganan los Perros si no puede caminar ni capturar.
 - Identificador 1 para el Puma, 2 a 13 para los Perros, 0 para posiciones vacias.
 
-## Pendiente para la entrega
+## Estado de entrega y puntos por revisar
 
-- Simular N llegadas de jugadores mediante threads y formar parejas (Listo).
-- Gestionar hasta M mesas simultaneas con espera pasiva y reutilizacion (Listo).
-- Resolver y documentar el jugador sobrante si N es impar (Listo: queda sin pareja).
-- Leer retardos, semilla y posiciones desde un archivo de configuracion(Listo).
-- Detectar abandonos y salidas inesperadas recuperables de hilos de jugador (Listo; fallos fatales del proceso quedan fuera del modelo de threads).
-- Atender SIGINT: dejar de aceptar jugadores, cancelar las partidas en curso y cerrar sin fugas (Listo, `make test-sigint`).
-- Evaluar concurrencia, escalabilidad y recursos en Linux.
-- Redactar el informe PDF de hasta dos paginas.
+- Implementados y probados: llegadas concurrentes, parejas, maximo M mesas,
+  espera pasiva, jugador sin pareja, configuracion, victorias, cierres SIGINT
+  y limpieza de recursos en los escenarios ensayados.
+- Fallos recuperables: pruebas internas con `pthread_cancel`/`pthread_exit` y
+  prueba integrada con inyeccion exclusiva de test.
+- Informe tecnico: `tarea2.pdf`, con dos paginas.
+- Abandono programado y fallo inesperado: ambos se notifican a la mesa y el
+  hilo juez decide el cierre. Conservan motivos distintos para el registro.
+- Limitaciones conocidas: semilla no fija la planificacion de hilos, las
+  partidas no tienen duracion maxima garantizada y un `SIGSEGV` puede terminar
+  todo el proceso que comparten los jugadores.
 
 La semilla inicial es 0. Cada ficha tiene un generador privado; la misma semilla
 no garantiza el mismo orden de movimientos entre threads.

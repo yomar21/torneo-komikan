@@ -218,6 +218,8 @@ int main(void)
         COMPROBAR(mesa_jugar(mesa, &resumen));
         COMPROBAR(pthread_join(auxiliar, NULL) == 0);
         COMPROBAR(resumen.motivo == MESA_ABANDONO);
+        COMPROBAR(resumen.abandono_detectado_por_juez == 1);
+        COMPROBAR(resumen.fallo_detectado_por_juez == 0);
         COMPROBAR(resumen.resultado == (bando == 0 ? VICTORIA_PERROS : VICTORIA_PUMA));
         COMPROBAR(resumen.fichas_creadas == TOTAL_FICHAS && resumen.fichas_unidas == TOTAL_FICHAS);
         COMPROBAR(resumen.juez_unido);
@@ -232,6 +234,7 @@ int main(void)
     mesa_abandono(mesa, BANDO_PUMA);
     COMPROBAR(mesa_jugar(mesa, &resumen));
     COMPROBAR(resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PERROS);
+    COMPROBAR(resumen.abandono_detectado_por_juez == 1);
     COMPROBAR(resumen.propuestas == 0);
     COMPROBAR(resumen.fichas_unidas == TOTAL_FICHAS && resumen.juez_unido);
     mesa_destruir(mesa);
@@ -251,6 +254,26 @@ int main(void)
     mesa_abandono(mesa, BANDO_PUMA);      /* el segundo abandono se ignora */
     COMPROBAR(mesa_jugar(mesa, &resumen));
     COMPROBAR(resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PUMA);
+    COMPROBAR(resumen.abandono_detectado_por_juez == 1);
+    mesa_destruir(mesa);
+
+    /* Abandono vs fallo antes del juez: el primer aviso prevalece. */
+    mesa = mesa_crear(&lenta, NULL, &sin_limite);
+    COMPROBAR(mesa != NULL);
+    mesa_abandono(mesa, BANDO_PUMA);
+    mesa_notificar_fallo(mesa, BANDO_PERROS);
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_ABANDONO && resumen.resultado == VICTORIA_PERROS);
+    COMPROBAR(resumen.abandono_detectado_por_juez == 1 && resumen.fallo_detectado_por_juez == 0);
+    mesa_destruir(mesa);
+
+    mesa = mesa_crear(&lenta, NULL, &sin_limite);
+    COMPROBAR(mesa != NULL);
+    mesa_notificar_fallo(mesa, BANDO_PERROS);
+    mesa_abandono(mesa, BANDO_PUMA);
+    COMPROBAR(mesa_jugar(mesa, &resumen));
+    COMPROBAR(resumen.motivo == MESA_FALLO_JUGADOR && resumen.resultado == VICTORIA_PUMA);
+    COMPROBAR(resumen.fallo_detectado_por_juez == 1 && resumen.abandono_detectado_por_juez == 0);
     mesa_destruir(mesa);
 
     /* Abandono despues de terminar, y abandono compitiendo con el fin natural. */

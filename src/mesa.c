@@ -30,8 +30,9 @@ struct Mesa {
     int jugada;                /* mesa_jugar ya se llamo */
     int terminada;
     int error;
-    int fallo_pendiente;     /* 1 si el supervisor notifico un hilo fallido */
-    Bando bando_fallido;    /* protegido por mutex; lo evalua solo el juez */
+    int retiro_pendiente;       /* aviso de abandono o fallo sin resolver */
+    MotivoCierre motivo_retiro; /* MESA_ABANDONO o MESA_FALLO_JUGADOR */
+    Bando bando_retirado;       /* lo lee y resuelve solamente el juez */
     Propuesta propuestas[TOTAL_FICHAS];
     int cola[TOTAL_FICHAS];
     int cabeza;
@@ -62,17 +63,36 @@ static void terminar(Mesa *mesa, MotivoCierre motivo, ResultadoPartida resultado
     pthread_cond_broadcast(&mesa->cambio);
 }
 
-/* Bajo el mutex: ningun otro hilo decide el resultado por fallo.
- * La funcion se ejecuta EXCLUSIVAMENTE desde ejecutar_juez. */
-static int juez_detectar_fallo(Mesa *mesa)
+/* Bajo el mutex, el juez es el unico que decide las victorias por retiro.
+ * No confundimos el abandono voluntario con un hilo fallido. */
+static int juez_detectar_retiro(Mesa *mesa)
 {
-    if (mesa->terminada || !mesa->fallo_pendiente) {
+    if (mesa->terminada || !mesa->retiro_pendiente) {
         return 0;
     }
-    mesa->resumen.fallo_detectado_por_juez = 1;
-    terminar(mesa, MESA_FALLO_JUGADOR,
-            mesa->bando_fallido == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
+    MotivoCierre motivo = mesa->motivo_retiro;
+    if (motivo == MESA_FALLO_JUGADOR) {
+        mesa->resumen.fallo_detectado_por_juez = 1;
+    } else {
+        mesa->resumen.abandono_detectado_por_juez = 1;
+    }
+    terminar(mesa, motivo,
+            mesa->bando_retirado == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
     return 1;
+}
+
+/* El emisor solo deposita el evento y despierta al juez. El primero prevalece.
+ * El mutex tambien permite notificar antes de que arranque el hilo juez. */
+static void notificar_retiro(Mesa *mesa, Bando bando, MotivoCierre motivo)
+{
+    pthread_mutex_lock(&mesa->mutex);
+    if (!mesa->terminada && !mesa->retiro_pendiente) {
+        mesa->retiro_pendiente = 1;
+        mesa->bando_retirado = bando;
+        mesa->motivo_retiro = motivo;
+        pthread_cond_broadcast(&mesa->cambio);
+    }
+    pthread_mutex_unlock(&mesa->mutex);
 }
 
 static int esperar_cambio(Mesa *mesa)
@@ -194,7 +214,7 @@ static void *ejecutar_juez(void *argumento)
     while (!mesa->iniciada && !mesa->terminada) {
         esperar_cambio(mesa);
     }
-    if (!mesa->terminada && !juez_detectar_fallo(mesa)) {
+    if (!mesa->terminada && !juez_detectar_retiro(mesa)) {
         ResultadoPartida resultado = tablero_evaluar_resultado(&mesa->tablero);
         if (resultado != PARTIDA_EN_CURSO) {
             terminar(mesa, resultado == ESTADO_INVALIDO ? MESA_ERROR : MESA_POR_VICTORIA,
@@ -203,13 +223,13 @@ static void *ejecutar_juez(void *argumento)
     }
 
     while (!mesa->terminada) {
-        if (juez_detectar_fallo(mesa)) {
+        if (juez_detectar_retiro(mesa)) {
             break;
         }
-        while (mesa->cantidad == 0 && !mesa->terminada && !mesa->fallo_pendiente) {
+        while (mesa->cantidad == 0 && !mesa->terminada && !mesa->retiro_pendiente) {
             esperar_cambio(mesa);
         }
-        if (juez_detectar_fallo(mesa) || mesa->terminada) {
+        if (juez_detectar_retiro(mesa) || mesa->terminada) {
             break;
         }
         int indice = mesa->cola[mesa->cabeza];
@@ -261,7 +281,15 @@ static void *ejecutar_juez(void *argumento)
         }
         pthread_mutex_lock(&mesa->mutex);
     }
+    /* El aviso se registra solo si el propio juez resolvio el abandono. */
+    int abandono_resuelto = mesa->resumen.abandono_detectado_por_juez;
+    Bando quien_abandono = mesa->bando_retirado;
     pthread_mutex_unlock(&mesa->mutex);
+    if (abandono_resuelto && mesa->opciones.mostrar_eventos) {
+        log_evento(mesa->opciones.id_mesa, "%s abandona la partida: %s por abandono",
+                   quien_abandono == BANDO_PUMA ? "El jugador del Puma" : "El jugador de los Perros",
+                   quien_abandono == BANDO_PUMA ? "ganan los Perros" : "gana el Puma");
+    }
     return NULL;
 }
 
@@ -319,35 +347,15 @@ void mesa_cancelar(Mesa *mesa)
     }
 }
 
-/* Notificacion asincrona: nunca adjudica por si sola la victoria.
- * El juez sera despertado por cambio incluso si no hay propuestas. */
+/* El hilo emisor nunca adjudica ganadores: SOLO el juez decide el cierre. */
 void mesa_notificar_fallo(Mesa *mesa, Bando quien_fallo)
 {
-    pthread_mutex_lock(&mesa->mutex);
-    if (!mesa->terminada && !mesa->fallo_pendiente) {
-        mesa->fallo_pendiente = 1;
-        mesa->bando_fallido = quien_fallo;
-        pthread_cond_broadcast(&mesa->cambio);
-    }
-    pthread_mutex_unlock(&mesa->mutex);
+    notificar_retiro(mesa, quien_fallo, MESA_FALLO_JUGADOR);
 }
 
 void mesa_abandono(Mesa *mesa, Bando quien_abandona)
 {
-    pthread_mutex_lock(&mesa->mutex);
-    /* Si llego primero el fallo, su resolucion queda reservada al juez. */
-    int efectiva = !mesa->terminada && !mesa->fallo_pendiente;
-    if (efectiva) {
-        terminar(mesa, MESA_ABANDONO,
-                quien_abandona == BANDO_PUMA ? VICTORIA_PERROS : VICTORIA_PUMA);
-    }
-    pthread_mutex_unlock(&mesa->mutex);
-    /* El log se escribe fuera del mutex de la mesa. */
-    if (efectiva && mesa->opciones.mostrar_eventos) {
-        log_evento(mesa->opciones.id_mesa, "%s abandona la partida: %s por abandono",
-                   quien_abandona == BANDO_PUMA ? "El jugador del Puma" : "El jugador de los Perros",
-                   quien_abandona == BANDO_PUMA ? "ganan los Perros" : "gana el Puma");
-    }
+    notificar_retiro(mesa, quien_abandona, MESA_ABANDONO);
 }
 
 void mesa_destruir(Mesa *mesa)

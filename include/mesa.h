@@ -32,7 +32,8 @@ typedef struct {
     int fichas_creadas;
     int fichas_unidas;
     int juez_unido;
-    int fallo_detectado_por_juez; /* el juez atendio el aviso de fallo */
+    int fallo_detectado_por_juez;    /* el juez atendio el fallo inesperado */
+    int abandono_detectado_por_juez; /* el juez decidio el abandono voluntario */
     Tablero tablero_final;
 } ResumenMesa;
 
@@ -53,15 +54,16 @@ int mesa_jugar(Mesa *mesa, ResumenMesa *resumen);
  * partida ya habia terminado no cambia nada. */
 void mesa_cancelar(Mesa *mesa);
 
-/* Un jugador se retira: la partida termina y gana su oponente por abandono. Se
- * puede llamar desde otro thread, antes, durante o despues de mesa_jugar. Si la
- * partida ya habia terminado, o si otro cierre llego antes, no cambia nada. */
+/* Un jugador se retira: SOLO se notifica al juez. El juez determina la
+ * victoria por abandono, tambien si la notificacion llego antes de arrancar.
+ * Se puede avisar antes, durante o despues de mesa_jugar; el primer aviso
+ * de retiro prevalece y las partidas ya terminadas no cambian. */
 void mesa_abandono(Mesa *mesa, Bando quien_abandona);
 
 /* El supervisor SOLO notifica la salida inesperada del jugador. El juez,
  * y no el hilo fallido, detecta el aviso y determina el ganador. El aviso
  * queda almacenado si el juez aun no arranco. Seguro bajo concurrencia con
- * mesa_jugar, mesa_abandono y mesa_cancelar. */
+ * mesa_jugar, mesa_abandono y mesa_cancelar. El primer retiro prevalece. */
 void mesa_notificar_fallo(Mesa *mesa, Bando quien_fallo);
 
 /* Libera la mesa. No se debe llamar mientras otro thread esta dentro de

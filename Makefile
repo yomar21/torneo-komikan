@@ -7,7 +7,7 @@ SOURCES = src/main.c src/configuracion.c src/tablero.c src/mesa.c src/log.c src/
 HEADERS = $(wildcard include/*.h)
 TEST_BINS = build/test_tablero build/test_mesa build/test_configuracion build/test_cola build/test_servidor build/test_log build/test_fallo_jugador
 
-.PHONY: all test test-sanitize test-tsan test-sigint test-sigint-tsan clean
+.PHONY: all test test-sanitize test-tsan test-sigint test-sigint-tsan test-integracion-fallo clean
 
 all: torneo
 
@@ -19,6 +19,13 @@ build:
 
 build/torneo_san: $(SOURCES) $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer $(SOURCES) -o $@ $(LDLIBS)
+
+# Ejecutable real con inyeccion habilitada solo durante la prueba integrada.
+build/torneo_fallo_inyectado: $(SOURCES) $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DKOMIKAN_TEST_FALLO_INTEGRADO $(SOURCES) -o $@ $(LDLIBS)
+
+test-integracion-fallo: torneo build/torneo_fallo_inyectado
+	sh tests/test_fallo_integracion.sh ./build/torneo_fallo_inyectado
 
 build/torneo_tsan: $(SOURCES) $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=thread $(SOURCES) -o $@ $(LDLIBS)
@@ -54,7 +61,7 @@ build/test_servidor: tests/test_servidor.c src/servidor.c src/cola.c src/mesa.c 
 build/test_fallo_jugador: tests/test_fallo_jugador.c src/servidor.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_fallo_jugador.c src/cola.c src/mesa.c src/log.c src/tablero.c src/configuracion.c -o $@ $(LDLIBS)
 
-test: $(TEST_BINS)
+test: torneo $(TEST_BINS) build/torneo_fallo_inyectado
 	./build/test_tablero
 	./build/test_configuracion
 	./build/test_mesa
@@ -62,6 +69,7 @@ test: $(TEST_BINS)
 	./build/test_servidor
 	./build/test_fallo_jugador
 	./build/test_log
+	sh tests/test_fallo_integracion.sh ./build/torneo_fallo_inyectado
 
 build/test_tablero_san: tests/test_tablero.c src/tablero.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_tablero.c src/tablero.c -o $@ $(LDLIBS)
@@ -106,4 +114,4 @@ test-tsan: build/test_mesa_tsan build/test_servidor_tsan build/test_log_tsan
 	./build/test_log_tsan
 
 clean:
-	rm -f torneo $(TEST_BINS) build/test_log_san build/test_log_tsan build/torneo_san build/torneo_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan build/test_fallo_jugador_san
+	rm -f torneo $(TEST_BINS) build/torneo_fallo_inyectado build/test_log_san build/test_log_tsan build/torneo_san build/torneo_tsan build/test_tablero_san build/test_mesa_san build/test_mesa_tsan build/test_cola_san build/test_servidor_san build/test_servidor_tsan build/test_fallo_jugador_san
